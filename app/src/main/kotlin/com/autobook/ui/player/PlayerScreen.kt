@@ -42,6 +42,7 @@ fun PlayerScreen(
     val playbackState by viewModel.playbackState.collectAsState()
     val currentPosition by viewModel.currentPosition.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
+    val skipSeconds by viewModel.skipSeconds.collectAsState()
 
     var showChapters by remember { mutableStateOf(false) }
 
@@ -339,14 +340,22 @@ fun PlayerScreen(
                         )
                     }
 
-                    // Rewind 15s
+                    // Rewind
                     IconButton(onClick = { viewModel.skipBackward() }) {
-                        Icon(
-                            Icons.Default.Replay10,
-                            contentDescription = "Rewind",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(36.dp)
-                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.Replay,
+                                contentDescription = "Rewind ${skipSeconds}s",
+                                tint = TextPrimary,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Text(
+                                "$skipSeconds",
+                                fontSize = 9.sp,
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
                     // Play/Pause button — large amber circle
@@ -367,14 +376,22 @@ fun PlayerScreen(
                         )
                     }
 
-                    // Forward 15s
+                    // Forward
                     IconButton(onClick = { viewModel.skipForward() }) {
-                        Icon(
-                            Icons.Default.Forward10,
-                            contentDescription = "Forward",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(36.dp)
-                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.Forward,
+                                contentDescription = "Forward ${skipSeconds}s",
+                                tint = TextPrimary,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Text(
+                                "$skipSeconds",
+                                fontSize = 9.sp,
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
                     // Next chapter

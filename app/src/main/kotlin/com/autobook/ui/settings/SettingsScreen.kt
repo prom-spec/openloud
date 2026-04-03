@@ -31,6 +31,7 @@ fun SettingsScreen(
 ) {
     val voices by viewModel.voices.collectAsState()
     val selectedVoice by viewModel.selectedVoice.collectAsState()
+    val skipSeconds by viewModel.skipSeconds.collectAsState()
     var defaultSpeed by remember { mutableStateOf(1.0f) }
 
     Scaffold(
@@ -167,6 +168,42 @@ fun SettingsScreen(
                                 inactiveTrackColor = NavyMuted
                             )
                         )
+                    }
+                }
+            }
+
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = NavySurface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            "Skip Duration: ${skipSeconds}s",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            listOf(5, 10, 15, 30, 60).forEach { secs ->
+                                val isSelected = skipSeconds == secs
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { viewModel.setSkipSeconds(secs) },
+                                    label = { Text("${secs}s", fontSize = 13.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = Amber,
+                                        selectedLabelColor = Color(0xFF261A00),
+                                        containerColor = Color.Transparent,
+                                        labelColor = TextMuted
+                                    )
+                                )
+                            }
+                        }
                     }
                 }
             }

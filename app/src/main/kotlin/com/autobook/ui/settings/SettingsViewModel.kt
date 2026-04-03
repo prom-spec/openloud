@@ -21,6 +21,9 @@ class SettingsViewModel(private val context: Context) : ViewModel() {
     private val _selectedVoice = MutableStateFlow<String?>(null)
     val selectedVoice: StateFlow<String?> = _selectedVoice
 
+    private val _skipSeconds = MutableStateFlow(15)
+    val skipSeconds: StateFlow<Int> = _skipSeconds
+
     /** Current language filter — set from the book being read, or null for all */
     private val _languageFilter = MutableStateFlow<String?>(null)
     val languageFilter: StateFlow<String?> = _languageFilter
@@ -32,6 +35,7 @@ class SettingsViewModel(private val context: Context) : ViewModel() {
 
     init {
         loadSelectedVoice()
+        loadSkipSeconds()
         loadVoices()
     }
 
@@ -85,6 +89,15 @@ class SettingsViewModel(private val context: Context) : ViewModel() {
         prefs.edit().putString(PREF_SELECTED_VOICE, voiceName).apply()
     }
 
+    private fun loadSkipSeconds() {
+        _skipSeconds.value = prefs.getInt(PREF_SKIP_SECONDS, 15)
+    }
+
+    fun setSkipSeconds(seconds: Int) {
+        _skipSeconds.value = seconds
+        prefs.edit().putInt(PREF_SKIP_SECONDS, seconds).apply()
+    }
+
     fun testVoice(voiceName: String) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -113,6 +126,7 @@ class SettingsViewModel(private val context: Context) : ViewModel() {
 
     companion object {
         const val PREF_SELECTED_VOICE = "selected_voice"
+        const val PREF_SKIP_SECONDS = "skip_seconds"
     }
 }
 

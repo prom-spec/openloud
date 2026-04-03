@@ -59,6 +59,9 @@ class PlayerViewModel(
     )
     val playbackSpeed: StateFlow<Float> = _playbackSpeed
 
+    private val _skipSeconds = MutableStateFlow(prefs.getInt("skip_seconds", 15))
+    val skipSeconds: StateFlow<Int> = _skipSeconds
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             Log.d(TAG, "Service connected")
@@ -192,13 +195,17 @@ class PlayerViewModel(
         }
     }
 
+    private fun skipMillis(): Int {
+        return prefs.getInt("skip_seconds", 15) * 1000
+    }
+
     fun skipForward() {
-        playbackService?.skipForward(15000)
+        playbackService?.skipForward(skipMillis())
         savePosition()
     }
 
     fun skipBackward() {
-        playbackService?.skipBackward(15000)
+        playbackService?.skipBackward(skipMillis())
         savePosition()
     }
 

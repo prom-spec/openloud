@@ -82,7 +82,7 @@ fun LibraryScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "AutoBook",
+                    text = "AIAnyBook",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
@@ -218,7 +218,19 @@ fun LibraryScreen(
                     ) {
                         Icon(Icons.Default.Edit, contentDescription = null, tint = Amber, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(12.dp))
-                        Text("Edit Name", modifier = Modifier.weight(1f))
+                        Text("Edit Book", modifier = Modifier.weight(1f))
+                    }
+                    TextButton(
+                        onClick = {
+                            showLongClickMenu = null
+                            viewModel.reSearchCover(book)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.textButtonColors(contentColor = TextPrimary)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Amber, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Re-search Cover", modifier = Modifier.weight(1f))
                     }
                     TextButton(
                         onClick = {
@@ -246,34 +258,56 @@ fun LibraryScreen(
         )
     }
 
-    // Edit name dialog
+    // Edit book dialog
     showEditDialog?.let { book ->
         var editedTitle by remember { mutableStateOf(book.title) }
+        var editedAuthor by remember { mutableStateOf(book.author ?: "") }
         AlertDialog(
             onDismissRequest = { showEditDialog = null },
             containerColor = NavySurface,
             titleContentColor = TextPrimary,
-            title = { Text("Edit Book Name") },
+            title = { Text("Edit Book") },
             text = {
-                OutlinedTextField(
-                    value = editedTitle,
-                    onValueChange = { editedTitle = it },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = Amber,
-                        focusedBorderColor = Amber,
-                        unfocusedBorderColor = TextMuted
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = editedTitle,
+                        onValueChange = { editedTitle = it },
+                        label = { Text("Title", color = TextMuted) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            cursorColor = Amber,
+                            focusedBorderColor = Amber,
+                            unfocusedBorderColor = TextMuted
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = editedAuthor,
+                        onValueChange = { editedAuthor = it },
+                        label = { Text("Author", color = TextMuted) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            cursorColor = Amber,
+                            focusedBorderColor = Amber,
+                            unfocusedBorderColor = TextMuted
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         if (editedTitle.isNotBlank()) {
-                            viewModel.renameBook(book, editedTitle.trim())
+                            viewModel.editBook(
+                                book,
+                                editedTitle.trim(),
+                                editedAuthor.trim().ifBlank { null }
+                            )
                             showEditDialog = null
                         }
                     },

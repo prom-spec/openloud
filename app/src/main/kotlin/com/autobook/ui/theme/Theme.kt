@@ -47,7 +47,7 @@ val InterFontFamily = FontFamily(
 )
 
 // Typography using Inter font
-val AutoBookTypography = Typography(
+val AIAnyBookTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = InterFontFamily,
         fontWeight = FontWeight.Bold,
@@ -186,7 +186,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun AutoBookTheme(
+fun AIAnyBookTheme(
     darkTheme: Boolean = true, // Default to dark theme
     content: @Composable () -> Unit
 ) {
@@ -194,7 +194,7 @@ fun AutoBookTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = AutoBookTypography,
+        typography = AIAnyBookTypography,
         content = content
     )
 }

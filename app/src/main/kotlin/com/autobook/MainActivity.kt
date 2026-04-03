@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -26,7 +27,7 @@ import com.autobook.ui.player.PlayerViewModel
 import com.autobook.ui.search.SearchScreen
 import com.autobook.ui.settings.SettingsScreen
 import com.autobook.ui.settings.SettingsViewModel
-import com.autobook.ui.theme.AutoBookTheme
+import com.autobook.ui.theme.AIAnyBookTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -39,16 +40,17 @@ class MainActivity : ComponentActivity() {
         repository = BookRepository(database.bookDao(), database.chapterDao())
 
         setContent {
-            AutoBookTheme {
-                AutoBookApp(repository = repository)
+            AIAnyBookTheme {
+                AIAnyBookApp(repository = repository)
             }
         }
     }
 }
 
 @Composable
-fun AutoBookApp(repository: BookRepository) {
+fun AIAnyBookApp(repository: BookRepository) {
     val navController = rememberNavController()
+    val context = LocalContext.current
 
     NavHost(
         navController = navController,
@@ -56,7 +58,7 @@ fun AutoBookApp(repository: BookRepository) {
     ) {
         composable(Screen.Library.route) {
             val viewModel: LibraryViewModel = viewModel(
-                factory = LibraryViewModelFactory(repository)
+                factory = LibraryViewModelFactory(repository, context)
             )
             LibraryScreen(
                 viewModel = viewModel,

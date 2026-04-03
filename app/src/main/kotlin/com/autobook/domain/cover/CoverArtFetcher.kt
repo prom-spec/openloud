@@ -189,7 +189,7 @@ class CoverArtFetcher(private val context: Context) {
             connection.readTimeout = 10000
             connection.instanceFollowRedirects = true
             // Some APIs need a User-Agent
-            connection.setRequestProperty("User-Agent", "AutoBook/1.0")
+            connection.setRequestProperty("User-Agent", "AIAnyBook/1.0")
 
             val responseCode = connection.responseCode
             Log.d(TAG, "Image download response: $responseCode, content-type: ${connection.contentType}")

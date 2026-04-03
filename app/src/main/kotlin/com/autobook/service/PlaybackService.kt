@@ -105,7 +105,7 @@ class PlaybackService : Service() {
     }
 
     private fun setupMediaSession() {
-        mediaSession = MediaSessionCompat(this, "AutoBookPlayback").apply {
+        mediaSession = MediaSessionCompat(this, "AIAnyBookPlayback").apply {
             setFlags(MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
                      MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS)
 
@@ -288,7 +288,7 @@ class PlaybackService : Service() {
     }
 
     private fun createNotification(): Notification {
-        val title = currentChapter?.title ?: "AutoBook"
+        val title = currentChapter?.title ?: "AIAnyBook"
 
         val playPauseAction = if (_playbackState.value == PlaybackState.PLAYING) {
             NotificationCompat.Action(

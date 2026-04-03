@@ -11,12 +11,13 @@ import com.autobook.ui.player.PlayerViewModel
 import com.autobook.ui.settings.SettingsViewModel
 
 class LibraryViewModelFactory(
-    private val repository: BookRepository
+    private val repository: BookRepository,
+    private val context: Context
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(LibraryViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return LibraryViewModel(repository) as T
+            return LibraryViewModel(repository, context) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

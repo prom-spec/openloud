@@ -228,7 +228,7 @@ private fun downloadFile(
             setTitle(fileName)
             setDescription("Downloading book...")
             setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "AutoBook/$fileName")
+            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "AIAnyBook/$fileName")
             if (userAgent != null) addRequestHeader("User-Agent", userAgent)
             addRequestHeader("Cookie", CookieManager.getInstance().getCookie(url) ?: "")
             setMimeType(guessedMime)
@@ -407,7 +407,7 @@ private fun resolveDownloadFile(uriString: String): File? {
                 if (path != null && path.contains("/external/")) {
                     // content://downloads/... -> check external downloads dir
                     val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                    val autoBookDir = File(downloadDir, "AutoBook")
+                    val autoBookDir = File(downloadDir, "AIAnyBook")
                     // Return the most recently modified file
                     autoBookDir.listFiles()?.maxByOrNull { it.lastModified() }
                 } else {

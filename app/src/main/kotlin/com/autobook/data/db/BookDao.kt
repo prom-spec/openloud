@@ -26,6 +26,12 @@ interface BookDao {
     @Query("UPDATE books SET title = :newTitle WHERE id = :bookId")
     suspend fun renameBook(bookId: String, newTitle: String)
 
+    @Query("UPDATE books SET author = :newAuthor WHERE id = :bookId")
+    suspend fun updateAuthor(bookId: String, newAuthor: String?)
+
+    @Query("UPDATE books SET coverPath = :coverPath WHERE id = :bookId")
+    suspend fun updateCoverPath(bookId: String, coverPath: String?)
+
     @Delete
     suspend fun deleteBook(book: BookEntity)
 

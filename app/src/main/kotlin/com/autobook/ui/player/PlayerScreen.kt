@@ -264,18 +264,23 @@ fun PlayerScreen(
                 } else 0f
 
                 Column(modifier = Modifier.padding(horizontal = 32.dp)) {
-                    @Suppress("DEPRECATION")
-                    LinearProgressIndicator(
-                        progress = progress.coerceIn(0f, 1f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp)),
-                        color = Amber,
-                        trackColor = NavyMuted
+                    Slider(
+                        value = progress.coerceIn(0f, 1f),
+                        onValueChange = { newProgress ->
+                            // Seek to the new position
+                            if (totalWords > 0) {
+                                viewModel.seekToProgress(newProgress)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Amber,
+                            activeTrackColor = Amber,
+                            inactiveTrackColor = NavyMuted
+                        )
                     )
 
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(0.dp))
 
                     // Time labels
                     Row(

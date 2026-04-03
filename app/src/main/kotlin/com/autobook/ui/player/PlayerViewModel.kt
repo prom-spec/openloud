@@ -116,6 +116,9 @@ class PlayerViewModel(
             _chapters.value = chapterList
             Log.d(TAG, "Chapters loaded: ${chapterList.size}")
 
+            // Mark this book as most recently accessed so the Resume card updates
+            bookEntity?.let { repository.updateReadPosition(bookId, it.currentChapterIndex, it.currentCharOffset) }
+
             bookEntity?.let { book ->
                 val chapter = chapterList.getOrNull(book.currentChapterIndex)
                 _currentChapter.value = chapter
@@ -230,6 +233,47 @@ class PlayerViewModel(
             playbackService?.stop()
             playbackService?.loadChapter(prevChapter, 0)
             playbackService?.play()
+        }
+    }
+
+    fun seekToProgress(progress: Float) {
+        viewModelScope.launch {
+            val book = _book.value ?: return@launch
+            val chapterList = _chapters.value
+            if (chapterList.isEmpty()) return@launch
+
+            val totalWords = chapterList.sumOf { it.textContent.split(Regex("\\s+")).size }
+            val targetWords = (totalWords * progress).toInt()
+
+            var accumulated = 0
+            for ((index, chapter) in chapterList.withIndex()) {
+                val chapterWords = chapter.textContent.split(Regex("\\s+")).size
+                if (accumulated + chapterWords >= targetWords || index == chapterList.lastIndex) {
+                    // Seek to this chapter
+                    val wordsIntoChapter = (targetWords - accumulated).coerceAtLeast(0)
+                    // Convert words into approximate sentence index
+                    val sentences = chapter.textContent.split(Regex("[.!?]+\\s+"))
+                    var sentenceWords = 0
+                    var sentenceIndex = 0
+                    for ((si, sentence) in sentences.withIndex()) {
+                        sentenceWords += sentence.split(Regex("\\s+")).size
+                        if (sentenceWords >= wordsIntoChapter) {
+                            sentenceIndex = si
+                            break
+                        }
+                        sentenceIndex = si
+                    }
+
+                    _currentChapter.value = chapter
+                    repository.updateReadPosition(book.id, index, sentenceIndex)
+                    _book.value = book.copy(currentChapterIndex = index, currentCharOffset = sentenceIndex)
+                    playbackService?.stop()
+                    playbackService?.loadChapter(chapter, sentenceIndex)
+                    playbackService?.play()
+                    break
+                }
+                accumulated += chapterWords
+            }
         }
     }
 

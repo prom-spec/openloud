@@ -62,7 +62,9 @@ fun SettingsScreen(
             }
 
             if (voices.isNotEmpty()) {
-                items(voices) { voice ->
+                val voiceList = voices
+                items(voiceList.size) { index ->
+                    val voice = voiceList[index]
                     val isSelected = voice.name == selectedVoice
                     Card(
                         modifier = Modifier.clickable {
@@ -80,6 +82,14 @@ fun SettingsScreen(
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // Number label
+                            Text(
+                                "${index + 1}",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = if (isSelected) Amber else TextMuted,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.width(32.dp)
+                            )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     voice.displayName,

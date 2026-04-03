@@ -17,10 +17,143 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
+data class CoverResult(val url: String, val source: String)
+
 class CoverArtFetcher(private val context: Context) {
 
     companion object {
         private const val TAG = "CoverArtFetcher"
+    }
+
+    /**
+     * Search multiple APIs and return all found cover URLs.
+     */
+    suspend fun searchCovers(title: String, author: String?): List<CoverResult> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<CoverResult>()
+        results.addAll(searchGoogleBooks(title, author))
+        results.addAll(searchOpenLibrary(title, author))
+        // Also try title-only if we had author
+        if (author != null && results.size < 6) {
+            results.addAll(searchGoogleBooks(title, null).filter { r -> results.none { it.url == r.url } })
+        }
+        results
+    }
+
+    private fun searchGoogleBooks(title: String, author: String?): List<CoverResult> {
+        return try {
+            val query = buildSearchQuery(title, author)
+            val searchUrl = "https://www.googleapis.com/books/v1/volumes?q=$query&maxResults=10"
+            val connection = URL(searchUrl).openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+            connection.instanceFollowRedirects = true
+
+            val results = mutableListOf<CoverResult>()
+            if (connection.responseCode == 200) {
+                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(response)
+                val items = json.optJSONArray("items")
+                if (items != null) {
+                    for (i in 0 until items.length()) {
+                        val item = items.getJSONObject(i)
+                        val volumeInfo = item.optJSONObject("volumeInfo") ?: continue
+                        val imageLinks = volumeInfo.optJSONObject("imageLinks") ?: continue
+                        val imageUrl = imageLinks.optString("medium").takeIf { it.isNotEmpty() }
+                            ?: imageLinks.optString("small").takeIf { it.isNotEmpty() }
+                            ?: imageLinks.optString("thumbnail").takeIf { it.isNotEmpty() }
+                            ?: imageLinks.optString("smallThumbnail").takeIf { it.isNotEmpty() }
+                        if (imageUrl != null) {
+                            // Request higher zoom
+                            val hiRes = imageUrl.replace("zoom=1", "zoom=2").replace("http://", "https://")
+                            val bookTitle = volumeInfo.optString("title", "")
+                            results.add(CoverResult(hiRes, "Google: $bookTitle"))
+                        }
+                    }
+                }
+            }
+            connection.disconnect()
+            results
+        } catch (e: Exception) {
+            Log.e(TAG, "Google Books search failed", e)
+            emptyList()
+        }
+    }
+
+    private fun searchOpenLibrary(title: String, author: String?): List<CoverResult> {
+        return try {
+            val query = URLEncoder.encode(title, "UTF-8")
+            val searchUrl = "https://openlibrary.org/search.json?title=$query&limit=6"
+            val connection = URL(searchUrl).openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+            connection.instanceFollowRedirects = true
+
+            val results = mutableListOf<CoverResult>()
+            if (connection.responseCode == 200) {
+                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(response)
+                val docs = json.optJSONArray("docs")
+                if (docs != null) {
+                    for (i in 0 until docs.length()) {
+                        val doc = docs.getJSONObject(i)
+                        val coverId = doc.optInt("cover_i", -1)
+                        if (coverId > 0) {
+                            val imageUrl = "https://covers.openlibrary.org/b/id/$coverId-L.jpg"
+                            val bookTitle = doc.optString("title", "")
+                            results.add(CoverResult(imageUrl, "OpenLibrary: $bookTitle"))
+                        }
+                    }
+                }
+            }
+            connection.disconnect()
+            results
+        } catch (e: Exception) {
+            Log.e(TAG, "Open Library search failed", e)
+            emptyList()
+        }
+    }
+
+    /**
+     * Download an image from URL and return as Bitmap.
+     */
+    suspend fun downloadBitmap(imageUrl: String): Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            val url = imageUrl.replace("http://", "https://")
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+            connection.instanceFollowRedirects = true
+            connection.setRequestProperty("User-Agent", "AIAnyBook/1.0")
+
+            if (connection.responseCode == 200) {
+                val bitmap = BitmapFactory.decodeStream(connection.inputStream)
+                connection.disconnect()
+                bitmap
+            } else {
+                connection.disconnect()
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Download bitmap failed: $imageUrl", e)
+            null
+        }
+    }
+
+    /**
+     * Save a bitmap as the cover for a book.
+     */
+    fun saveCoverBitmap(bitmap: Bitmap, bookId: String): String {
+        val coversDir = File(context.filesDir, "covers")
+        if (!coversDir.exists()) coversDir.mkdirs()
+        val coverFile = File(coversDir, "$bookId.jpg")
+        if (coverFile.exists()) coverFile.delete()
+        FileOutputStream(coverFile).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+        }
+        return coverFile.absolutePath
     }
 
     suspend fun fetchAndSaveCover(title: String, author: String?, bookId: String): String = withContext(Dispatchers.IO) {

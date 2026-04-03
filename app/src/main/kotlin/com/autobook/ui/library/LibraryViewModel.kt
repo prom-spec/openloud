@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.autobook.data.db.BookEntity
 import com.autobook.data.repository.BookRepository
 import com.autobook.domain.cover.CoverArtFetcher
+import com.autobook.domain.cover.CoverResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -64,13 +65,53 @@ class LibraryViewModel(
     private val _researchingCover = MutableStateFlow<String?>(null)
     val researchingCover: StateFlow<String?> = _researchingCover
 
+    // Cover search results
+    private val _coverSearchResults = MutableStateFlow<List<CoverResult>>(emptyList())
+    val coverSearchResults: StateFlow<List<CoverResult>> = _coverSearchResults
+
+    private val _coverSearchLoading = MutableStateFlow(false)
+    val coverSearchLoading: StateFlow<Boolean> = _coverSearchLoading
+
+    private val _selectedCoverBitmap = MutableStateFlow<Bitmap?>(null)
+    val selectedCoverBitmap: StateFlow<Bitmap?> = _selectedCoverBitmap
+
+    private val fetcher = CoverArtFetcher(context)
+
+    fun searchCovers(book: BookEntity) {
+        viewModelScope.launch {
+            _coverSearchLoading.value = true
+            _coverSearchResults.value = emptyList()
+            _selectedCoverBitmap.value = null
+            try {
+                val results = fetcher.searchCovers(book.title, book.author)
+                _coverSearchResults.value = results
+            } catch (e: Exception) {
+                _coverSearchResults.value = emptyList()
+            } finally {
+                _coverSearchLoading.value = false
+            }
+        }
+    }
+
+    fun selectCoverForCrop(cover: CoverResult) {
+        viewModelScope.launch {
+            val bitmap = fetcher.downloadBitmap(cover.url)
+            _selectedCoverBitmap.value = bitmap
+        }
+    }
+
+    fun clearCoverSearch() {
+        _coverSearchResults.value = emptyList()
+        _selectedCoverBitmap.value = null
+        _coverSearchLoading.value = false
+    }
+
     fun reSearchCover(book: BookEntity) {
         viewModelScope.launch {
             _researchingCover.value = book.id
             try {
                 // Delete old cover
                 book.coverPath?.let { java.io.File(it).delete() }
-                val fetcher = CoverArtFetcher(context)
                 val newCoverPath = fetcher.fetchAndSaveCover(book.title, book.author, book.id)
                 repository.updateCoverPath(book.id, newCoverPath)
             } catch (e: Exception) {

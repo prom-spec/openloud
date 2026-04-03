@@ -1,10 +1,7 @@
 package com.autobook.ui.library
 
 import android.content.Context
-import android.net.Uri
 import android.util.Log
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -53,16 +50,9 @@ fun LibraryScreen(
     var showEditDialog by remember { mutableStateOf<BookEntity?>(null) }
     var showLongClickMenu by remember { mutableStateOf<BookEntity?>(null) }
     var coverPickBook by remember { mutableStateOf<BookEntity?>(null) }
-    var cropImageUri by remember { mutableStateOf<Uri?>(null) }
-
-    // Gallery picker launcher
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null && coverPickBook != null) {
-            cropImageUri = uri
-        }
-    }
+    val coverSearchResults by viewModel.coverSearchResults.collectAsState()
+    val coverSearchLoading by viewModel.coverSearchLoading.collectAsState()
+    val selectedCoverBitmap by viewModel.selectedCoverBitmap.collectAsState()
 
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
@@ -250,14 +240,14 @@ fun LibraryScreen(
                         onClick = {
                             showLongClickMenu = null
                             coverPickBook = book
-                            galleryLauncher.launch("image/*")
+                            viewModel.searchCovers(book)
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.textButtonColors(contentColor = TextPrimary)
                     ) {
                         Icon(Icons.Default.Image, contentDescription = null, tint = Amber, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(12.dp))
-                        Text("Set Cover from Gallery", modifier = Modifier.weight(1f))
+                        Text("Choose Cover", modifier = Modifier.weight(1f))
                     }
                     TextButton(
                         onClick = {
@@ -385,18 +375,21 @@ fun LibraryScreen(
         )
     }
 
-    // Cover crop dialog
-    cropImageUri?.let { uri ->
-        coverPickBook?.let { book ->
-            CoverCropDialog(
-                imageUri = uri,
-                onConfirm = { croppedBitmap ->
+    // Cover picker dialog (API search → select → crop)
+    coverPickBook?.let { book ->
+        if (coverSearchLoading || coverSearchResults.isNotEmpty() || selectedCoverBitmap != null) {
+            CoverPickerDialog(
+                covers = coverSearchResults,
+                isLoading = coverSearchLoading,
+                onSelectAndCrop = { cover -> viewModel.selectCoverForCrop(cover) },
+                onConfirmCropped = { croppedBitmap ->
                     viewModel.setCustomCover(book.id, croppedBitmap)
-                    cropImageUri = null
+                    viewModel.clearCoverSearch()
                     coverPickBook = null
                 },
+                selectedBitmap = selectedCoverBitmap,
                 onDismiss = {
-                    cropImageUri = null
+                    viewModel.clearCoverSearch()
                     coverPickBook = null
                 }
             )

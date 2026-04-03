@@ -21,6 +21,7 @@ import com.autobook.MainActivity
 import com.autobook.R
 import com.autobook.data.db.ChapterEntity
 import com.autobook.domain.chapter.ContentCleaner
+import com.autobook.domain.tts.EdgeTTSEngine
 import com.autobook.domain.tts.SystemTTSEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,14 +36,18 @@ class PlaybackService : Service() {
     private val binder = PlaybackBinder()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    private lateinit var ttsEngine: SystemTTSEngine
+    private lateinit var systemTTS: SystemTTSEngine
+    private var edgeTTS: EdgeTTSEngine? = null
+    private var useEdgeTTS: Boolean = false
     private lateinit var contentCleaner: ContentCleaner
     private lateinit var mediaSession: MediaSessionCompat
     private lateinit var notificationManager: NotificationManager
     private lateinit var prefs: SharedPreferences
     private val voiceChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "selected_voice") {
-            setVoice()
+        when (key) {
+            "selected_voice" -> if (!useEdgeTTS) setVoice()
+            "tts_engine" -> switchEngine()
+            "edge_voice" -> updateEdgeVoice()
         }
     }
 
@@ -66,25 +71,32 @@ class PlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
 
-        ttsEngine = SystemTTSEngine(applicationContext)
+        systemTTS = SystemTTSEngine(applicationContext)
         contentCleaner = ContentCleaner()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
         prefs.registerOnSharedPreferenceChangeListener(voiceChangeListener)
 
+        useEdgeTTS = prefs.getString("tts_engine", "system") == "edge"
+
         createNotificationChannel()
         setupMediaSession()
 
+        if (useEdgeTTS) {
+            initEdgeTTS()
+        }
+
         serviceScope.launch {
-            val initialized = ttsEngine.initialize()
-            _ttsReady.value = initialized
-            if (initialized) {
-                setupTTSListener()
-                // If play was requested before TTS was ready, start now
-                if (pendingPlay) {
-                    pendingPlay = false
-                    play()
+            val initialized = systemTTS.initialize()
+            if (!useEdgeTTS) {
+                _ttsReady.value = initialized
+                if (initialized) {
+                    setupSystemTTSListener()
+                    if (pendingPlay) {
+                        pendingPlay = false
+                        play()
+                    }
                 }
             }
         }
@@ -140,8 +152,52 @@ class PlaybackService : Service() {
         }
     }
 
-    private fun setupTTSListener() {
-        ttsEngine.setProgressListener(object : UtteranceProgressListener() {
+    private fun initEdgeTTS() {
+        edgeTTS?.shutdown()
+        edgeTTS = EdgeTTSEngine(cacheDir).apply {
+            val savedVoice = prefs.getString("edge_voice", EdgeTTSEngine.VOICES[0].id)
+            setVoice(savedVoice ?: EdgeTTSEngine.VOICES[0].id)
+            setSpeed(prefs.getFloat("playback_speed", 1.0f))
+            setListener(object : EdgeTTSEngine.Listener {
+                override fun onStart(utteranceId: String) {
+                    _playbackState.value = PlaybackState.PLAYING
+                    updateMediaSessionState()
+                }
+                override fun onDone(utteranceId: String) {
+                    serviceScope.launch { playNextSentence() }
+                }
+                override fun onError(utteranceId: String) {
+                    // Fallback: try system TTS for this sentence
+                    android.util.Log.w("PlaybackService", "Edge TTS failed, falling back to system")
+                    _playbackState.value = PlaybackState.ERROR
+                }
+            })
+        }
+        _ttsReady.value = true
+    }
+
+    private fun switchEngine() {
+        val wasPlaying = _playbackState.value == PlaybackState.PLAYING
+        stop()
+        useEdgeTTS = prefs.getString("tts_engine", "system") == "edge"
+        if (useEdgeTTS) {
+            initEdgeTTS()
+        } else {
+            edgeTTS?.shutdown()
+            edgeTTS = null
+            _ttsReady.value = true
+            setupSystemTTSListener()
+        }
+        if (wasPlaying) play()
+    }
+
+    private fun updateEdgeVoice() {
+        val voiceId = prefs.getString("edge_voice", EdgeTTSEngine.VOICES[0].id)
+        edgeTTS?.setVoice(voiceId ?: EdgeTTSEngine.VOICES[0].id)
+    }
+
+    private fun setupSystemTTSListener() {
+        systemTTS.setProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
                 _playbackState.value = PlaybackState.PLAYING
                 updateMediaSessionState()
@@ -167,11 +223,19 @@ class PlaybackService : Service() {
 
             if (sentence == ContentCleaner.PARAGRAPH_BREAK) {
                 // Insert a pause for paragraph breaks, then continue
-                ttsEngine.speakWithPause("", "para_$currentSentenceIndex", 600)
+                if (useEdgeTTS) {
+                    edgeTTS?.speakWithPause("", "para_$currentSentenceIndex", 600)
+                } else {
+                    systemTTS.speakWithPause("", "para_$currentSentenceIndex", 600)
+                }
                 return
             }
 
-            ttsEngine.speakSentence(sentence, "sentence_$currentSentenceIndex")
+            if (useEdgeTTS) {
+                edgeTTS?.speakSentence(sentence, "sentence_$currentSentenceIndex")
+            } else {
+                systemTTS.speakSentence(sentence, "sentence_$currentSentenceIndex")
+            }
         } else {
             // Chapter finished
             _playbackState.value = PlaybackState.PAUSED
@@ -206,7 +270,7 @@ class PlaybackService : Service() {
     }
 
     fun pause() {
-        ttsEngine.pause()
+        if (useEdgeTTS) edgeTTS?.pause() else systemTTS.pause()
         _playbackState.value = PlaybackState.PAUSED
         updateMediaSessionState()
         updateNotification()
@@ -219,7 +283,7 @@ class PlaybackService : Service() {
     }
 
     fun stop() {
-        ttsEngine.stop()
+        if (useEdgeTTS) edgeTTS?.stop() else systemTTS.stop()
         _playbackState.value = PlaybackState.IDLE
         currentSentenceIndex = 0
         updateMediaSessionState()
@@ -233,7 +297,7 @@ class PlaybackService : Service() {
         _currentPosition.value = currentSentenceIndex
 
         if (_playbackState.value == PlaybackState.PLAYING) {
-            ttsEngine.stop()
+            if (useEdgeTTS) edgeTTS?.stop() else systemTTS.stop()
             playNextSentence()
         }
     }
@@ -244,16 +308,19 @@ class PlaybackService : Service() {
         _currentPosition.value = currentSentenceIndex
 
         if (_playbackState.value == PlaybackState.PLAYING) {
-            ttsEngine.stop()
+            if (useEdgeTTS) edgeTTS?.stop() else systemTTS.stop()
             playNextSentence()
         }
     }
 
     fun setVoice() {
-        ttsEngine.reloadVoice()
-        // Restart current utterance so new voice takes effect immediately
+        if (useEdgeTTS) {
+            updateEdgeVoice()
+        } else {
+            systemTTS.reloadVoice()
+        }
         if (_playbackState.value == PlaybackState.PLAYING) {
-            ttsEngine.stop()
+            if (useEdgeTTS) edgeTTS?.stop() else systemTTS.stop()
             if (currentSentenceIndex > 0) currentSentenceIndex--
             playNextSentence()
         }
@@ -261,11 +328,13 @@ class PlaybackService : Service() {
 
     fun setSpeed(speed: Float) {
         playbackSpeed = speed
-        ttsEngine.setSpeed(speed)
-        // Restart current utterance so new speed takes effect immediately
+        if (useEdgeTTS) {
+            edgeTTS?.setSpeed(speed)
+        } else {
+            systemTTS.setSpeed(speed)
+        }
         if (_playbackState.value == PlaybackState.PLAYING) {
-            ttsEngine.stop()
-            // Back up one sentence since playNextSentence increments
+            if (useEdgeTTS) edgeTTS?.stop() else systemTTS.stop()
             if (currentSentenceIndex > 0) currentSentenceIndex--
             playNextSentence()
         }
@@ -406,7 +475,8 @@ class PlaybackService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         prefs.unregisterOnSharedPreferenceChangeListener(voiceChangeListener)
-        ttsEngine.shutdown()
+        systemTTS.shutdown()
+        edgeTTS?.shutdown()
         mediaSession.release()
         serviceScope.cancel()
     }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.speech.tts.TextToSpeech
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.autobook.domain.tts.EdgeTTSEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,19 +25,66 @@ class SettingsViewModel(private val context: Context) : ViewModel() {
     private val _skipSeconds = MutableStateFlow(15)
     val skipSeconds: StateFlow<Int> = _skipSeconds
 
+    // TTS engine selection
+    private val _ttsEngine = MutableStateFlow("system")
+    val ttsEngine: StateFlow<String> = _ttsEngine
+
+    // Edge TTS voices
+    private val _edgeVoices = MutableStateFlow(EdgeTTSEngine.VOICES)
+    val edgeVoices: StateFlow<List<EdgeTTSEngine.Voice>> = _edgeVoices
+
+    private val _selectedEdgeVoice = MutableStateFlow<String?>(null)
+    val selectedEdgeVoice: StateFlow<String?> = _selectedEdgeVoice
+
     /** Current language filter — set from the book being read, or null for all */
     private val _languageFilter = MutableStateFlow<String?>(null)
     val languageFilter: StateFlow<String?> = _languageFilter
 
     private var tts: TextToSpeech? = null
     private var allVoices: List<VoiceInfo> = emptyList()
+    private var edgeTTSPreview: EdgeTTSEngine? = null
 
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     init {
         loadSelectedVoice()
         loadSkipSeconds()
+        loadTTSEngine()
         loadVoices()
+    }
+
+    private fun loadTTSEngine() {
+        _ttsEngine.value = prefs.getString(PREF_TTS_ENGINE, "system") ?: "system"
+        _selectedEdgeVoice.value = prefs.getString(PREF_EDGE_VOICE, EdgeTTSEngine.VOICES[0].id)
+    }
+
+    fun setTTSEngine(engine: String) {
+        _ttsEngine.value = engine
+        prefs.edit().putString(PREF_TTS_ENGINE, engine).apply()
+    }
+
+    fun selectEdgeVoice(voiceId: String) {
+        _selectedEdgeVoice.value = voiceId
+        prefs.edit().putString(PREF_EDGE_VOICE, voiceId).apply()
+    }
+
+    fun testEdgeVoice(voiceId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (edgeTTSPreview == null) {
+                    edgeTTSPreview = EdgeTTSEngine(context.cacheDir)
+                }
+                edgeTTSPreview!!.setVoice(voiceId)
+                edgeTTSPreview!!.setListener(object : EdgeTTSEngine.Listener {
+                    override fun onStart(utteranceId: String) {}
+                    override fun onDone(utteranceId: String) {}
+                    override fun onError(utteranceId: String) {}
+                })
+                edgeTTSPreview!!.speakSentence("Hello, this is a test of this voice.", "test")
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     private fun loadSelectedVoice() {
@@ -122,11 +170,14 @@ class SettingsViewModel(private val context: Context) : ViewModel() {
     override fun onCleared() {
         super.onCleared()
         tts?.shutdown()
+        edgeTTSPreview?.shutdown()
     }
 
     companion object {
         const val PREF_SELECTED_VOICE = "selected_voice"
         const val PREF_SKIP_SECONDS = "skip_seconds"
+        const val PREF_TTS_ENGINE = "tts_engine"
+        const val PREF_EDGE_VOICE = "edge_voice"
     }
 }
 

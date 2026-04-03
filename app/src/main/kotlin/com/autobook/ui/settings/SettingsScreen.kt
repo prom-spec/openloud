@@ -20,6 +20,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.platform.LocalContext
 import com.autobook.BuildConfig
+import com.autobook.domain.tts.EdgeTTSEngine
 import com.autobook.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,6 +33,9 @@ fun SettingsScreen(
     val voices by viewModel.voices.collectAsState()
     val selectedVoice by viewModel.selectedVoice.collectAsState()
     val skipSeconds by viewModel.skipSeconds.collectAsState()
+    val ttsEngine by viewModel.ttsEngine.collectAsState()
+    val edgeVoices by viewModel.edgeVoices.collectAsState()
+    val selectedEdgeVoice by viewModel.selectedEdgeVoice.collectAsState()
     var defaultSpeed by remember { mutableStateOf(1.0f) }
 
     Scaffold(
@@ -57,19 +61,68 @@ fun SettingsScreen(
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // TTS Engine Selection
+            item {
+                SectionHeader("TTS ENGINE")
+            }
+
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = NavySurface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            FilterChip(
+                                selected = ttsEngine == "system",
+                                onClick = { viewModel.setTTSEngine("system") },
+                                label = { Text("📱 Device", fontSize = 14.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Amber,
+                                    selectedLabelColor = Color(0xFF261A00),
+                                    containerColor = Color.Transparent,
+                                    labelColor = TextMuted
+                                )
+                            )
+                            FilterChip(
+                                selected = ttsEngine == "edge",
+                                onClick = { viewModel.setTTSEngine("edge") },
+                                label = { Text("✨ AI Neural", fontSize = 14.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Amber,
+                                    selectedLabelColor = Color(0xFF261A00),
+                                    containerColor = Color.Transparent,
+                                    labelColor = TextMuted
+                                )
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            if (ttsEngine == "edge") "Microsoft neural voices • Free • Requires internet"
+                            else "Built-in Android TTS • Works offline",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted
+                        )
+                    }
+                }
+            }
+
             // Voice Selection Section
             item {
                 SectionHeader("VOICE")
             }
 
-            if (voices.isNotEmpty()) {
-                val voiceList = voices
-                items(voiceList.size) { index ->
-                    val voice = voiceList[index]
-                    val isSelected = voice.name == selectedVoice
+            if (ttsEngine == "edge") {
+                // Edge TTS voices
+                items(edgeVoices.size) { index ->
+                    val voice = edgeVoices[index]
+                    val isSelected = voice.id == selectedEdgeVoice
                     Card(
                         modifier = Modifier.clickable {
-                            viewModel.selectVoice(voice.name)
+                            viewModel.selectEdgeVoice(voice.id)
                             onVoiceChanged?.invoke()
                         },
                         shape = RoundedCornerShape(12.dp),
@@ -83,7 +136,6 @@ fun SettingsScreen(
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Number label
                             Text(
                                 "${index + 1}",
                                 style = MaterialTheme.typography.titleMedium,
@@ -98,16 +150,13 @@ fun SettingsScreen(
                                     color = if (isSelected) TextPrimary else TextSecondary
                                 )
                                 Text(
-                                    buildString {
-                                        append(voiceQualityLabel(voice.quality))
-                                        if (voice.isNetwork) append(" • ☁ Network")
-                                    },
+                                    voice.gender + " • Neural",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = TextMuted
                                 )
                             }
                             IconButton(
-                                onClick = { viewModel.testVoice(voice.name) },
+                                onClick = { viewModel.testEdgeVoice(voice.id) },
                                 modifier = Modifier.size(40.dp)
                             ) {
                                 Icon(
@@ -128,12 +177,79 @@ fun SettingsScreen(
                     }
                 }
             } else {
-                item {
-                    Text(
-                        "Loading voices…",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextMuted
-                    )
+                // System TTS voices
+                if (voices.isNotEmpty()) {
+                    val voiceList = voices
+                    items(voiceList.size) { index ->
+                        val voice = voiceList[index]
+                        val isSelected = voice.name == selectedVoice
+                        Card(
+                            modifier = Modifier.clickable {
+                                viewModel.selectVoice(voice.name)
+                                onVoiceChanged?.invoke()
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) Amber.copy(alpha = 0.15f) else NavySurface
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "${index + 1}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = if (isSelected) Amber else TextMuted,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.width(32.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        voice.displayName,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = if (isSelected) TextPrimary else TextSecondary
+                                    )
+                                    Text(
+                                        buildString {
+                                            append(voiceQualityLabel(voice.quality))
+                                            if (voice.isNetwork) append(" • ☁ Network")
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextMuted
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { viewModel.testVoice(voice.name) },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.PlayCircle,
+                                        contentDescription = "Preview voice",
+                                        tint = if (isSelected) Amber else TextMuted,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                                if (isSelected) {
+                                    Icon(
+                                        Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Amber
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    item {
+                        Text(
+                            "Loading voices…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextMuted
+                        )
+                    }
                 }
             }
 

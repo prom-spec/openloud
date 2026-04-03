@@ -133,8 +133,8 @@ fun LibraryScreen(
                     }
                 }
             } else {
-                // Resume Playback hero card (last played book)
-                val lastBook = books.firstOrNull()
+                // Resume Playback hero card (only if a book was actually played)
+                val lastBook = books.firstOrNull { it.lastReadAt != null }
                 if (lastBook != null) {
                     ResumeCard(
                         book = lastBook,

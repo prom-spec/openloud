@@ -70,7 +70,7 @@ class ImportViewModel(
                 _importState.value = ImportState.Processing(30, "Extracting text...")
 
                 // Extract text and metadata
-                data class BookMeta(val text: String, val title: String, val author: String?, val language: String?)
+                data class BookMeta(val text: String, val title: String, val author: String?, val language: String?, val embeddedCover: ByteArray? = null)
                 val meta = when (format) {
                     BookFormat.PDF -> {
                         val text = pdfParser.extractText(file.absolutePath) { pct ->
@@ -93,8 +93,12 @@ class ImportViewModel(
                             _importState.value = ImportState.Processing(progressInt, "Extracting text... ${(pct * 100).toInt()}%")
                         }
                         val (epubTitle, epubAuthor, epubLang) = epubParser.extractMetadata(file.absolutePath)
-                        val cleanTitle = cleanFileName(epubTitle ?: file.nameWithoutExtension)
-                        BookMeta(text, cleanTitle, epubAuthor, epubLang)
+                        // Clean up messy epub metadata
+                        val cleanTitle = cleanEpubTitle(epubTitle, file.nameWithoutExtension)
+                        val cleanAuthor = cleanEpubAuthor(epubAuthor, epubTitle)
+                        // Try to extract embedded cover
+                        val embeddedCover = epubParser.extractCoverImage(file.absolutePath)
+                        BookMeta(text, cleanTitle, cleanAuthor, epubLang, embeddedCover)
                     }
                     BookFormat.MOBI, BookFormat.FB2, BookFormat.ODT, BookFormat.DOCX -> {
                         val parser: com.autobook.domain.parser.BookParser = when (format) {
@@ -143,9 +147,25 @@ class ImportViewModel(
                 // Create book entity
                 val bookId = UUID.randomUUID().toString()
 
-                // Fetch cover art
+                // Fetch cover art — prefer embedded cover from epub, fallback to online search
                 val coverPath = try {
-                    coverArtFetcher.fetchAndSaveCover(title, author, bookId)
+                    if (meta.embeddedCover != null) {
+                        // Save embedded cover directly
+                        val coversDir = java.io.File(context.filesDir, "covers")
+                        if (!coversDir.exists()) coversDir.mkdirs()
+                        val coverFile = java.io.File(coversDir, "$bookId.jpg")
+                        val bitmap = android.graphics.BitmapFactory.decodeByteArray(meta.embeddedCover, 0, meta.embeddedCover.size)
+                        if (bitmap != null) {
+                            java.io.FileOutputStream(coverFile).use { out ->
+                                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
+                            }
+                            coverFile.absolutePath
+                        } else {
+                            coverArtFetcher.fetchAndSaveCover(title, author, bookId)
+                        }
+                    } else {
+                        coverArtFetcher.fetchAndSaveCover(title, author, bookId)
+                    }
                 } catch (e: Exception) {
                     // If fetching fails, generate placeholder
                     null
@@ -257,6 +277,53 @@ class ImportViewModel(
             return BookFormat.FB2
         }
         return BookFormat.TXT
+    }
+
+    /**
+     * Clean messy epub titles like "Joan D. Vinge   Cat 2   Catspaw (v1)" → "Catspaw"
+     */
+    private fun cleanEpubTitle(rawTitle: String?, fallback: String): String {
+        if (rawTitle.isNullOrBlank()) return cleanFileName(fallback)
+
+        // If title contains multiple segments separated by spaces (3+), author-like prefix, etc.
+        // Try to extract the last meaningful segment
+        val cleaned = rawTitle
+            .replace(Regex("\\(.*?\\)"), "") // remove parentheticals like (v1)
+            .replace(Regex("\\[.*?\\]"), "") // remove brackets
+            .trim()
+
+        // If the title has segments separated by multiple spaces, take the last substantial one
+        val segments = cleaned.split(Regex("\\s{2,}")).map { it.trim() }.filter { it.isNotBlank() }
+        if (segments.size > 1) {
+            // Last segment is typically the actual title
+            return segments.last()
+        }
+
+        return cleanFileName(cleaned)
+    }
+
+    /**
+     * Clean epub author — sometimes the title and author fields are swapped or contain
+     * the book title instead of the actual author.
+     */
+    private fun cleanEpubAuthor(rawAuthor: String?, rawTitle: String?): String? {
+        if (rawAuthor.isNullOrBlank()) return null
+
+        // If "author" looks like a book title (single word, no space = suspicious for a person name)
+        // and the raw title contains what looks like an author name, swap them
+        val hasSpace = rawAuthor.contains(" ")
+        if (!hasSpace && rawTitle != null) {
+            // Single word author is suspicious — could be swapped
+            // Try to find a name-like pattern in the title
+            val segments = rawTitle.split(Regex("\\s{2,}")).map { it.trim() }.filter { it.isNotBlank() }
+            val nameSegment = segments.firstOrNull { seg ->
+                seg.contains(" ") && seg.split(" ").size in 2..4 &&
+                seg.split(" ").all { word -> word.first().isUpperCase() }
+            }
+            if (nameSegment != null) return nameSegment
+        }
+
+        return rawAuthor.trim()
     }
 
     private fun detectFormat(extension: String): BookFormat {

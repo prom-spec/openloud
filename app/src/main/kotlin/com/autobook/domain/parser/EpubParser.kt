@@ -95,6 +95,88 @@ class EpubParser {
     }
 
     /**
+     * Extract embedded cover image bytes from the EPUB.
+     * Returns the image bytes or null if no cover found.
+     */
+    fun extractCoverImage(filePath: String): ByteArray? {
+        return try {
+            val zip = ZipFile(File(filePath))
+            val opfPath = findOpfPath(zip)
+            if (opfPath == null) {
+                zip.close()
+                return null
+            }
+
+            val opfDir = opfPath.substringBeforeLast("/", "")
+            val opfEntry = zip.getEntry(opfPath)
+            val opfDoc = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(zip.getInputStream(opfEntry))
+
+            // Strategy 1: Look for <meta name="cover" content="cover-image-id"/>
+            var coverHref: String? = null
+            val metaNodes = opfDoc.getElementsByTagName("meta")
+            for (i in 0 until metaNodes.length) {
+                val meta = metaNodes.item(i) as Element
+                if (meta.getAttribute("name") == "cover") {
+                    val coverId = meta.getAttribute("content")
+                    // Find this id in the manifest
+                    val items = opfDoc.getElementsByTagName("item")
+                    for (j in 0 until items.length) {
+                        val item = items.item(j) as Element
+                        if (item.getAttribute("id") == coverId) {
+                            coverHref = item.getAttribute("href")
+                            break
+                        }
+                    }
+                    break
+                }
+            }
+
+            // Strategy 2: Look for item with properties="cover-image"
+            if (coverHref == null) {
+                val items = opfDoc.getElementsByTagName("item")
+                for (i in 0 until items.length) {
+                    val item = items.item(i) as Element
+                    if (item.getAttribute("properties")?.contains("cover-image") == true) {
+                        coverHref = item.getAttribute("href")
+                        break
+                    }
+                }
+            }
+
+            // Strategy 3: Look for item with id containing "cover" and image media-type
+            if (coverHref == null) {
+                val items = opfDoc.getElementsByTagName("item")
+                for (i in 0 until items.length) {
+                    val item = items.item(i) as Element
+                    val id = item.getAttribute("id").lowercase()
+                    val mediaType = item.getAttribute("media-type")
+                    if (id.contains("cover") && mediaType.startsWith("image/")) {
+                        coverHref = item.getAttribute("href")
+                        break
+                    }
+                }
+            }
+
+            if (coverHref != null) {
+                val fullPath = if (opfDir.isNotEmpty()) "$opfDir/$coverHref" else coverHref
+                val coverEntry = zip.getEntry(fullPath) ?: zip.getEntry(coverHref)
+                if (coverEntry != null) {
+                    val bytes = zip.getInputStream(coverEntry).readBytes()
+                    zip.close()
+                    return bytes
+                }
+            }
+
+            zip.close()
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to extract EPUB cover", e)
+            null
+        }
+    }
+
+    /**
      * Find the OPF file path from META-INF/container.xml
      */
     private fun findOpfPath(zip: ZipFile): String? {

@@ -1,5 +1,6 @@
 package com.autobook.ui.library
 
+import android.content.Context
 import android.util.Log
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -49,6 +50,10 @@ fun LibraryScreen(
     var showEditDialog by remember { mutableStateOf<BookEntity?>(null) }
     var showLongClickMenu by remember { mutableStateOf<BookEntity?>(null) }
 
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    var largeIcons by remember { mutableStateOf(prefs.getBoolean("library_large_icons", true)) }
+
     Scaffold(
         containerColor = Navy,
         floatingActionButton = {
@@ -82,7 +87,17 @@ fun LibraryScreen(
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(onClick = {
+                        largeIcons = !largeIcons
+                        prefs.edit().putBoolean("library_large_icons", largeIcons).apply()
+                    }) {
+                        Icon(
+                            if (largeIcons) Icons.Default.GridView else Icons.Default.ViewModule,
+                            contentDescription = "Toggle view",
+                            tint = TextSecondary
+                        )
+                    }
                     IconButton(onClick = onSearchClick) {
                         Icon(Icons.Default.Search, contentDescription = "Search", tint = TextSecondary)
                     }
@@ -158,17 +173,25 @@ fun LibraryScreen(
 
                 // Book grid
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
+                    columns = GridCells.Fixed(if (largeIcons) 2 else 3),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(if (largeIcons) 12.dp else 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (largeIcons) 12.dp else 8.dp)
                 ) {
                     items(books) { book ->
-                        BookCard(
-                            book = book,
-                            onClick = { onBookClick(book.id) },
-                            onLongClick = { showLongClickMenu = book }
-                        )
+                        if (largeIcons) {
+                            BookCard(
+                                book = book,
+                                onClick = { onBookClick(book.id) },
+                                onLongClick = { showLongClickMenu = book }
+                            )
+                        } else {
+                            BookCardSmall(
+                                book = book,
+                                onClick = { onBookClick(book.id) },
+                                onLongClick = { showLongClickMenu = book }
+                            )
+                        }
                     }
                 }
             }
@@ -503,6 +526,94 @@ fun BookCard(
                         .fillMaxWidth()
                         .height(3.dp)
                         .clip(RoundedCornerShape(2.dp)),
+                    color = Amber,
+                    trackColor = NavyMuted
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun BookCardSmall(
+    book: BookEntity,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = NavySurface)
+    ) {
+        Column {
+            // Cover art — smaller
+            val coverFile = book.coverPath?.let { File(it) }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Amber.copy(alpha = 0.3f),
+                                SecondaryGold.copy(alpha = 0.2f),
+                                Navy.copy(alpha = 0.8f)
+                            )
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (coverFile != null && coverFile.exists()) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(coverFile)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = book.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        Icons.Default.MenuBook,
+                        contentDescription = null,
+                        modifier = Modifier.size(32.dp),
+                        tint = Amber.copy(alpha = 0.7f)
+                    )
+                }
+            }
+
+            // Info — compact
+            Column(modifier = Modifier.padding(8.dp)) {
+                Text(
+                    text = book.title,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                val progress = if (book.totalChapters > 0) {
+                    book.currentChapterIndex.toFloat() / book.totalChapters
+                } else 0f
+
+                @Suppress("DEPRECATION")
+                LinearProgressIndicator(
+                    progress = progress,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .clip(RoundedCornerShape(1.dp)),
                     color = Amber,
                     trackColor = NavyMuted
                 )

@@ -16,9 +16,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.autobook.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,6 +41,9 @@ fun ImportScreen(
     // Track whether we got a result back from the picker
     var pickerResultReceived by remember { mutableStateOf(false) }
 
+    // Use */* so all files (including .bin) are visible in the picker
+    val mimeTypes = arrayOf("*/*")
+
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
@@ -52,16 +58,7 @@ fun ImportScreen(
     LaunchedEffect(Unit) {
         if (!pickerLaunched) {
             pickerLaunched = true
-            launcher.launch(arrayOf(
-                "application/pdf",
-                "application/epub+zip",
-                "application/x-mobipocket-ebook",
-                "application/x-fictionbook+xml",
-                "application/vnd.oasis.opendocument.text",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "text/plain",
-                "application/octet-stream"
-            ))
+            launcher.launch(mimeTypes)
         }
     }
 
@@ -70,6 +67,20 @@ fun ImportScreen(
         if (pickerLaunched && pickerResultReceived && importState is ImportState.Idle) {
             onBack()
         }
+    }
+
+    // Detect when activity resumes after picker closes without calling the callback
+    // (some Android versions/devices don't call the result on back press)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && pickerLaunched && !pickerResultReceived) {
+                // Picker closed without giving us a result — user pressed back
+                onBack()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(importState) {
@@ -138,16 +149,8 @@ fun ImportScreen(
 
                         Button(
                             onClick = {
-                                launcher.launch(arrayOf(
-                                    "application/pdf",
-                                    "application/epub+zip",
-                                    "application/x-mobipocket-ebook",
-                                    "application/x-fictionbook+xml",
-                                    "application/vnd.oasis.opendocument.text",
-                                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                    "text/plain",
-                                    "application/octet-stream"
-                                ))
+                                pickerResultReceived = false
+                                launcher.launch(mimeTypes)
                             },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Amber,

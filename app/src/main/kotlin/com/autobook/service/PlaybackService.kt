@@ -73,11 +73,22 @@ class PlaybackService : Service() {
 
         serviceScope.launch {
             val initialized = ttsEngine.initialize()
+            ttsReady = initialized
             if (initialized) {
                 setupTTSListener()
+                // If play was requested before TTS was ready, start now
+                if (pendingPlay) {
+                    pendingPlay = false
+                    play()
+                }
             }
         }
     }
+
+    @Volatile
+    private var ttsReady = false
+    @Volatile
+    private var pendingPlay = false
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -174,6 +185,12 @@ class PlaybackService : Service() {
         if (_playbackState.value == PlaybackState.PLAYING) return
 
         if (sentences.isEmpty()) return
+
+        // If TTS isn't ready yet, queue play for when it's initialized
+        if (!ttsReady) {
+            pendingPlay = true
+            return
+        }
 
         _playbackState.value = PlaybackState.PLAYING
         playNextSentence()

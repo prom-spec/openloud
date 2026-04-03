@@ -22,6 +22,8 @@ class BookRepository(
 
     suspend fun updateBook(book: BookEntity) = bookDao.updateBook(book)
 
+    suspend fun renameBook(bookId: String, newTitle: String) = bookDao.renameBook(bookId, newTitle)
+
     suspend fun deleteBook(book: BookEntity) = bookDao.deleteBook(book)
 
     suspend fun deleteBookWithChapters(book: BookEntity) {

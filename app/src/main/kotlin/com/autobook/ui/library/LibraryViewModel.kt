@@ -35,4 +35,10 @@ class LibraryViewModel(
             repository.deleteBookWithChapters(book)
         }
     }
+
+    fun renameBook(book: BookEntity, newTitle: String) {
+        viewModelScope.launch {
+            repository.renameBook(book.id, newTitle)
+        }
+    }
 }

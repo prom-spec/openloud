@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import com.autobook.data.db.BookEntity
 import com.autobook.ui.theme.*
 import java.io.File
@@ -44,6 +46,8 @@ fun LibraryScreen(
     val books by viewModel.books.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     var showDeleteDialog by remember { mutableStateOf<BookEntity?>(null) }
+    var showEditDialog by remember { mutableStateOf<BookEntity?>(null) }
+    var showLongClickMenu by remember { mutableStateOf<BookEntity?>(null) }
 
     Scaffold(
         containerColor = Navy,
@@ -163,12 +167,107 @@ fun LibraryScreen(
                         BookCard(
                             book = book,
                             onClick = { onBookClick(book.id) },
-                            onLongClick = { showDeleteDialog = book }
+                            onLongClick = { showLongClickMenu = book }
                         )
                     }
                 }
             }
         }
+    }
+
+    // Long-click menu
+    showLongClickMenu?.let { book ->
+        AlertDialog(
+            onDismissRequest = { showLongClickMenu = null },
+            containerColor = NavySurface,
+            titleContentColor = TextPrimary,
+            textContentColor = TextSecondary,
+            title = { Text(book.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column {
+                    TextButton(
+                        onClick = {
+                            showLongClickMenu = null
+                            showEditDialog = book
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.textButtonColors(contentColor = TextPrimary)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = null, tint = Amber, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Edit Name", modifier = Modifier.weight(1f))
+                    }
+                    TextButton(
+                        onClick = {
+                            showLongClickMenu = null
+                            showDeleteDialog = book
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFFF6B6B))
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF6B6B), modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Delete", modifier = Modifier.weight(1f))
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(
+                    onClick = { showLongClickMenu = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = TextSecondary)
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Edit name dialog
+    showEditDialog?.let { book ->
+        var editedTitle by remember { mutableStateOf(book.title) }
+        AlertDialog(
+            onDismissRequest = { showEditDialog = null },
+            containerColor = NavySurface,
+            titleContentColor = TextPrimary,
+            title = { Text("Edit Book Name") },
+            text = {
+                OutlinedTextField(
+                    value = editedTitle,
+                    onValueChange = { editedTitle = it },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = Amber,
+                        focusedBorderColor = Amber,
+                        unfocusedBorderColor = TextMuted
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (editedTitle.isNotBlank()) {
+                            viewModel.renameBook(book, editedTitle.trim())
+                            showEditDialog = null
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Amber)
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showEditDialog = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = TextSecondary)
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     // Delete confirmation dialog

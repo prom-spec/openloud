@@ -263,14 +263,23 @@ fun PlayerScreen(
                     wordsRead.toFloat() / totalWords.coerceAtLeast(1)
                 } else 0f
 
+                // Track slider drag separately so we don't hammer seekToProgress
+                var isDragging by remember { mutableStateOf(false) }
+                var dragProgress by remember { mutableFloatStateOf(0f) }
+                val displayProgress = if (isDragging) dragProgress else progress.coerceIn(0f, 1f)
+
                 Column(modifier = Modifier.padding(horizontal = 32.dp)) {
                     Slider(
-                        value = progress.coerceIn(0f, 1f),
+                        value = displayProgress,
                         onValueChange = { newProgress ->
-                            // Seek to the new position
+                            isDragging = true
+                            dragProgress = newProgress
+                        },
+                        onValueChangeFinished = {
                             if (totalWords > 0) {
-                                viewModel.seekToProgress(newProgress)
+                                viewModel.seekToProgress(dragProgress)
                             }
+                            isDragging = false
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = SliderDefaults.colors(

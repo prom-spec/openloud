@@ -46,25 +46,33 @@ class SystemTTSEngine(private val context: Context) {
             }
         }
 
-        // Only en-US voices
+        // Only en-US voices, sorted same as Settings screen
         val englishVoices = tts?.voices?.filter {
             it.locale.language == "en" && it.locale.country == "US"
         }?.sortedWith(compareByDescending<Voice> {
             it.quality
         }.thenBy {
-            // Prefer network voices (they sound much better)
-            if (it.isNetworkConnectionRequired) 0 else 1
+            if (it.isNetworkConnectionRequired) 1 else 0 // offline first (matches Settings)
+        }.thenBy {
+            it.name
         })
 
-        val bestVoice = englishVoices?.firstOrNull()
+        // Default to voice #12 (index 11) — reads best per user preference
+        val defaultIndex = 11
+        val bestVoice = if (englishVoices != null && englishVoices.size > defaultIndex) {
+            englishVoices[defaultIndex]
+        } else {
+            englishVoices?.firstOrNull()
+        }
+
         if (bestVoice != null) {
             tts?.voice = bestVoice
-            Log.d(TAG, "Auto-selected voice: ${bestVoice.name} (quality=${bestVoice.quality}, locale=${bestVoice.locale}, network=${bestVoice.isNetworkConnectionRequired})")
+            Log.d(TAG, "Auto-selected voice #${(englishVoices?.indexOf(bestVoice) ?: -1) + 1}: ${bestVoice.name} (quality=${bestVoice.quality}, locale=${bestVoice.locale}, network=${bestVoice.isNetworkConnectionRequired})")
         } else {
             Log.w(TAG, "No suitable voice found, using default")
         }
 
-        Log.d(TAG, "Available EN voices: ${englishVoices?.take(10)?.map { "${it.name} (q=${it.quality}, ${it.locale}, net=${it.isNetworkConnectionRequired})" }}")
+        Log.d(TAG, "Available EN voices: ${englishVoices?.take(15)?.mapIndexed { i, v -> "#${i+1} ${v.name} (q=${v.quality}, net=${v.isNetworkConnectionRequired})" }}")
     }
 
     /** Re-read saved voice from SharedPreferences and apply it */

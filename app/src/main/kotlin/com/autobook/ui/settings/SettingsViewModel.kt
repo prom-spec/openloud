@@ -55,8 +55,8 @@ class SettingsViewModel(private val context: Context) : ViewModel() {
                         )
                     }?.sortedWith(
                         compareByDescending<VoiceInfo> { it.quality }
-                            .thenBy { it.isNetwork } // offline first
-                            .thenBy { it.displayName }
+                            .thenBy { if (it.isNetwork) 1 else 0 } // offline first
+                            .thenBy { it.name }
                     ) ?: emptyList()
                 }
                 applyFilter()

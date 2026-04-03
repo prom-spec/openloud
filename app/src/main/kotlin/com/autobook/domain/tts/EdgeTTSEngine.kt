@@ -67,6 +67,8 @@ class EdgeTTSEngine(private val cacheDir: File) {
     private var pitch: String = "+0Hz"
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var currentJob: Job? = null
+    private var prefetchJob: Job? = null
+    private var prefetchedAudio: Pair<String, ByteArray>? = null  // text -> audio
     private var isReady = true
     private var clockSkewSeconds: Double = 0.0
     private var retryCount = 0
@@ -85,6 +87,30 @@ class EdgeTTSEngine(private val cacheDir: File) {
         speechRate = if (pct >= 0) "+${pct}%" else "${pct}%"
     }
 
+    /**
+     * Pre-synthesize the next sentence while current is playing.
+     * Call this as soon as you know what the next sentence will be.
+     */
+    fun prefetch(text: String) {
+        if (text.isBlank()) return
+        // Don't re-prefetch same text
+        if (prefetchedAudio?.first == text) return
+        prefetchJob?.cancel()
+        prefetchJob = scope.launch {
+            try {
+                val audio = synthesize(text)
+                if (audio != null && audio.isNotEmpty()) {
+                    prefetchedAudio = text to audio
+                    Log.d(TAG, "Prefetched ${audio.size} bytes for: ${text.take(40)}")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Prefetch failed: ${e.message}")
+            }
+        }
+    }
+
     fun speakSentence(text: String, utteranceId: String) {
         if (text.isBlank()) {
             listener?.onDone(utteranceId)
@@ -95,7 +121,19 @@ class EdgeTTSEngine(private val cacheDir: File) {
         currentJob = scope.launch {
             try {
                 listener?.onStart(utteranceId)
-                val audioBytes = synthesize(text)
+
+                // Check if we already have this audio prefetched
+                val cached = prefetchedAudio
+                val audioBytes = if (cached != null && cached.first == text) {
+                    Log.d(TAG, "Using prefetched audio for: ${text.take(40)}")
+                    prefetchedAudio = null
+                    cached.second
+                } else {
+                    prefetchJob?.cancel() // Cancel any in-progress prefetch
+                    prefetchedAudio = null
+                    synthesize(text)
+                }
+
                 if (audioBytes != null && audioBytes.isNotEmpty()) {
                     playAudio(audioBytes, utteranceId)
                 } else {

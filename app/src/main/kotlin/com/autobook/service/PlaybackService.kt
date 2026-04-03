@@ -233,6 +233,8 @@ class PlaybackService : Service() {
 
             if (useEdgeTTS) {
                 edgeTTS?.speakSentence(sentence, "sentence_$currentSentenceIndex")
+                // Prefetch next non-break sentence for faster playback
+                prefetchNextEdgeSentence()
             } else {
                 systemTTS.speakSentence(sentence, "sentence_$currentSentenceIndex")
             }
@@ -240,6 +242,17 @@ class PlaybackService : Service() {
             // Chapter finished
             _playbackState.value = PlaybackState.PAUSED
             updateMediaSessionState()
+        }
+    }
+
+    private fun prefetchNextEdgeSentence() {
+        // Look ahead for the next actual sentence (skip paragraph breaks)
+        var idx = currentSentenceIndex
+        while (idx < sentences.size && sentences[idx] == ContentCleaner.PARAGRAPH_BREAK) {
+            idx++
+        }
+        if (idx < sentences.size) {
+            edgeTTS?.prefetch(sentences[idx])
         }
     }
 

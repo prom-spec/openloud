@@ -11,7 +11,11 @@ import com.autobook.data.repository.BookRepository
 import com.autobook.domain.chapter.ChapterDetector
 import com.autobook.domain.chapter.ContentCleaner
 import com.autobook.domain.cover.CoverArtFetcher
+import com.autobook.domain.parser.DocxParser
 import com.autobook.domain.parser.EpubParser
+import com.autobook.domain.parser.Fb2Parser
+import com.autobook.domain.parser.MobiParser
+import com.autobook.domain.parser.OdtParser
 import com.autobook.domain.parser.PdfParser
 import com.autobook.domain.parser.TxtParser
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +37,10 @@ class ImportViewModel(
     private val pdfParser = PdfParser(context)
     private val txtParser = TxtParser()
     private val epubParser = EpubParser()
+    private val mobiParser = MobiParser()
+    private val fb2Parser = Fb2Parser()
+    private val odtParser = OdtParser()
+    private val docxParser = DocxParser()
     private val chapterDetector = ChapterDetector()
     private val contentCleaner = ContentCleaner()
     private val coverArtFetcher = CoverArtFetcher(context)
@@ -43,11 +51,22 @@ class ImportViewModel(
                 _importState.value = ImportState.Processing(0, "Copying file...")
 
                 // Copy file to app storage
-                val file = copyFileToAppStorage(uri)
+                var file = copyFileToAppStorage(uri)
                 _importState.value = ImportState.Processing(20, "Reading file...")
 
-                // Determine format
-                val format = detectFormat(file.extension)
+                // Determine format — try extension first, fall back to magic bytes
+                var format = detectFormat(file.extension)
+                if (format == BookFormat.TXT && file.extension.lowercase() !in listOf("txt", "text")) {
+                    // Extension wasn't recognized (e.g. .bin) — sniff content
+                    format = detectFormatByContent(file)
+                    // Rename file to correct extension for parsers that need it
+                    if (format != BookFormat.TXT) {
+                        val ext = format.name.lowercase()
+                        val renamed = File(file.parent, file.nameWithoutExtension + "." + ext)
+                        file.renameTo(renamed)
+                        file = renamed
+                    }
+                }
                 _importState.value = ImportState.Processing(30, "Extracting text...")
 
                 // Extract text and metadata
@@ -76,6 +95,24 @@ class ImportViewModel(
                         val (epubTitle, epubAuthor, epubLang) = epubParser.extractMetadata(file.absolutePath)
                         val cleanTitle = cleanFileName(epubTitle ?: file.nameWithoutExtension)
                         BookMeta(text, cleanTitle, epubAuthor, epubLang)
+                    }
+                    BookFormat.MOBI, BookFormat.FB2, BookFormat.ODT, BookFormat.DOCX -> {
+                        val parser: com.autobook.domain.parser.BookParser = when (format) {
+                            BookFormat.MOBI -> mobiParser
+                            BookFormat.FB2 -> fb2Parser
+                            BookFormat.ODT -> odtParser
+                            BookFormat.DOCX -> docxParser
+                            else -> throw IllegalStateException()
+                        }
+                        val parsed = file.inputStream().use { stream ->
+                            parser.parse(stream, file.name) { pct ->
+                                val progressInt = 30 + (pct * 20).toInt()
+                                _importState.value = ImportState.Processing(progressInt, "Extracting text... ${(pct * 100).toInt()}%")
+                            }
+                        }
+                        val allText = parsed.chapters.joinToString("\n\n") { it.textContent }
+                        val cleanTitle = cleanFileName(parsed.title ?: file.nameWithoutExtension)
+                        BookMeta(allText, cleanTitle, parsed.author, parsed.language)
                     }
                     else -> throw IllegalArgumentException("Unsupported format: $format")
                 }
@@ -173,13 +210,53 @@ class ImportViewModel(
         return when {
             mimeType?.contains("pdf") == true -> "pdf"
             mimeType?.contains("epub") == true -> "epub"
+            mimeType?.contains("mobi") == true -> "mobi"
+            mimeType?.contains("opendocument.text") == true -> "odt"
+            mimeType?.contains("wordprocessingml") == true -> "docx"
+            mimeType?.contains("fictionbook") == true -> "fb2"
             mimeType?.contains("text") == true -> "txt"
             else -> {
                 // Try to get from URI path
                 val ext = uri.path?.substringAfterLast('.', "")?.lowercase() ?: ""
-                if (ext in listOf("pdf", "epub", "txt")) ext else "txt"
+                if (ext in listOf("pdf", "epub", "mobi", "odt", "docx", "fb2", "txt")) ext
+                else "unknown" // Will be resolved by magic byte sniffing after copy
             }
         }
+    }
+
+    /**
+     * Detect format by reading magic bytes from the actual file content.
+     * EPUB/DOCX/ODT are ZIP-based (PK header), PDF starts with %PDF.
+     */
+    private fun detectFormatByContent(file: File): BookFormat {
+        val header = file.inputStream().use { it.readNBytes(8) }
+        // ZIP-based formats (EPUB, DOCX, ODT)
+        if (header.size >= 4 && header[0] == 0x50.toByte() && header[1] == 0x4B.toByte()) {
+            // It's a ZIP — peek inside to distinguish epub vs docx vs odt
+            return try {
+                val zip = java.util.zip.ZipFile(file)
+                val entries = zip.entries().toList().map { it.name }
+                zip.close()
+                when {
+                    entries.any { it == "META-INF/container.xml" } -> BookFormat.EPUB
+                    entries.any { it.startsWith("word/") } -> BookFormat.DOCX
+                    entries.any { it == "mimetype" || it.startsWith("META-INF/manifest.xml") } -> BookFormat.ODT
+                    else -> BookFormat.EPUB // ZIP with unknown structure, try epub
+                }
+            } catch (e: Exception) {
+                BookFormat.TXT
+            }
+        }
+        // PDF
+        if (header.size >= 4 && String(header.sliceArray(0..3)) == "%PDF") {
+            return BookFormat.PDF
+        }
+        // FB2 (XML-based)
+        val headerStr = String(header)
+        if (headerStr.startsWith("<?xml") || headerStr.startsWith("<FictionBook")) {
+            return BookFormat.FB2
+        }
+        return BookFormat.TXT
     }
 
     private fun detectFormat(extension: String): BookFormat {
@@ -187,6 +264,10 @@ class ImportViewModel(
             "pdf" -> BookFormat.PDF
             "txt" -> BookFormat.TXT
             "epub" -> BookFormat.EPUB
+            "mobi" -> BookFormat.MOBI
+            "fb2" -> BookFormat.FB2
+            "odt" -> BookFormat.ODT
+            "docx" -> BookFormat.DOCX
             else -> BookFormat.TXT
         }
     }

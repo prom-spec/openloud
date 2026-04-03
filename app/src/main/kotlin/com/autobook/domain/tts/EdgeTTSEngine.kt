@@ -10,10 +10,13 @@ import java.io.File
 import java.io.FileOutputStream
 import java.math.BigInteger
 import java.security.MessageDigest
+import java.text.SimpleDateFormat
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -26,7 +29,7 @@ class EdgeTTSEngine(private val cacheDir: File) {
     companion object {
         private const val TAG = "EdgeTTSEngine"
         private const val TRUSTED_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
-        private const val GEC_VERSION = "1-131.0.2903.51"
+        private const val GEC_VERSION = "1-143.0.3650.75"
         private const val OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3"
 
         // Best English neural voices
@@ -65,6 +68,8 @@ class EdgeTTSEngine(private val cacheDir: File) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var currentJob: Job? = null
     private var isReady = true
+    private var clockSkewSeconds: Double = 0.0
+    private var retryCount = 0
 
     fun setListener(listener: Listener) {
         this.listener = listener
@@ -144,28 +149,73 @@ class EdgeTTSEngine(private val cacheDir: File) {
 
     fun isReady() = isReady
 
-    private suspend fun synthesize(text: String): ByteArray? = suspendCancellableCoroutine { cont ->
+    private suspend fun synthesize(text: String): ByteArray? {
+        // Try with clock skew correction on 403
+        for (attempt in 0..2) {
+            val result = doSynthesize(text)
+            if (result != null) {
+                retryCount = 0
+                return result
+            }
+            // On failure, try to fix clock skew
+            Log.w(TAG, "Synthesis attempt $attempt failed, adjusting clock skew...")
+            resolveClockSkew()
+            delay(500)
+        }
+        return null
+    }
+
+    private fun generateMuid(): String {
+        val bytes = ByteArray(16)
+        java.security.SecureRandom().nextBytes(bytes)
+        return bytes.joinToString("") { "%02X".format(it) }
+    }
+
+    private suspend fun resolveClockSkew() {
+        try {
+            val url = buildWsUrl(UUID.randomUUID().toString().replace("-", "")).replace("wss://", "https://")
+            val request = Request.Builder().url(url).head()
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
+                .build()
+            val response = client.newCall(request).execute()
+            val dateHeader = response.header("Date")
+            response.close()
+            if (dateHeader != null) {
+                val fmt = SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'", Locale.US)
+                fmt.timeZone = TimeZone.getTimeZone("GMT")
+                val serverTime = fmt.parse(dateHeader)?.time?.toDouble()?.div(1000)
+                if (serverTime != null) {
+                    val clientTime = System.currentTimeMillis().toDouble() / 1000
+                    clockSkewSeconds = serverTime - clientTime
+                    Log.d(TAG, "Clock skew adjusted to ${clockSkewSeconds}s")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Clock skew resolution failed: ${e.message}")
+        }
+    }
+
+    private suspend fun doSynthesize(text: String): ByteArray? = suspendCancellableCoroutine { cont ->
         val audioBuffer = mutableListOf<ByteArray>()
         val uuid = UUID.randomUUID().toString().replace("-", "")
         val url = buildWsUrl(uuid)
 
+        val muid = generateMuid()
         val request = Request.Builder()
             .url(url)
             .header("Pragma", "no-cache")
             .header("Cache-Control", "no-cache")
-            .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0")
             .header("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold")
-            .header("Accept-Encoding", "gzip, deflate, br")
+            .header("Accept-Encoding", "gzip, deflate, br, zstd")
             .header("Accept-Language", "en-US,en;q=0.9")
+            .header("Cookie", "muid=$muid;")
             .build()
 
         val ws = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                // Send speech config
                 val speechConfig = buildSpeechConfig(uuid)
                 webSocket.send(speechConfig)
-
-                // Send SSML
                 val ssml = buildSSML(text, uuid)
                 webSocket.send(ssml)
             }
@@ -179,14 +229,11 @@ class EdgeTTSEngine(private val cacheDir: File) {
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
-                // Binary frame: first 2 bytes = header length, rest = audio
+                // Binary frame: first 2 bytes are header, rest is audio data
                 val data = bytes.toByteArray()
                 if (data.size > 2) {
-                    val headerLen = ((data[0].toInt() and 0xFF) shl 8) or (data[1].toInt() and 0xFF)
-                    if (data.size > headerLen + 2) {
-                        val audio = data.copyOfRange(headerLen + 2, data.size)
-                        audioBuffer.add(audio)
-                    }
+                    val audio = data.copyOfRange(2, data.size)
+                    audioBuffer.add(audio)
                 }
             }
 
@@ -290,13 +337,14 @@ class EdgeTTSEngine(private val cacheDir: File) {
     }
 
     private fun genSecMsGec(): String {
-        var t = System.currentTimeMillis().toDouble() / 1000
-        t += 11644473600
-        t -= (t % 300)
-        t *= 1e9 / 100
-        val s = "%d$TRUSTED_TOKEN".format(t.toLong()).toByteArray(Charsets.US_ASCII)
-        val digest = MessageDigest.getInstance("SHA-256").digest(s)
-        return BigInteger(1, digest).toString(16).uppercase().padStart(64, '0')
+        var t = (System.currentTimeMillis().toDouble() / 1000) + clockSkewSeconds
+        t += 11644473600.0
+        t -= (t % 300.0)
+        t *= 1e9 / 100.0
+        val ticks = t.toLong()
+        val strToHash = "${ticks}$TRUSTED_TOKEN"
+        val digest = MessageDigest.getInstance("SHA-256").digest(strToHash.toByteArray(Charsets.US_ASCII))
+        return digest.joinToString("") { "%02X".format(it) }
     }
 
     private fun datetimeStr(): String {

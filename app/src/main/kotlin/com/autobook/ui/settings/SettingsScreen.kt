@@ -36,7 +36,6 @@ fun SettingsScreen(
     val ttsEngine by viewModel.ttsEngine.collectAsState()
     val edgeVoices by viewModel.edgeVoices.collectAsState()
     val selectedEdgeVoice by viewModel.selectedEdgeVoice.collectAsState()
-    var defaultSpeed by remember { mutableStateOf(1.0f) }
 
     Scaffold(
         containerColor = Navy,

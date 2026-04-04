@@ -416,41 +416,7 @@ fun PlayerScreen(
                     }
                 }
 
-                Spacer(Modifier.height(20.dp))
 
-                // Speed selector — wired to viewModel
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = 48.dp)
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(NavySurface)
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    val speeds = listOf(0.5f, 0.75f, 1.0f, 1.5f, 2.0f)
-                    speeds.forEach { speed ->
-                        val isSelected = playbackSpeed == speed
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(if (isSelected) Amber else Color.Transparent)
-                                .clickable {
-                                    viewModel.setSpeed(speed)
-                                }
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "${speed}x",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (isSelected) Color(0xFF261A00) else TextMuted,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 13.sp
-                            )
-                        }
-                    }
-                }
             }
         }
     }

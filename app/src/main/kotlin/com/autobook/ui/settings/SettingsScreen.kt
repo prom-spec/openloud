@@ -259,34 +259,7 @@ fun SettingsScreen(
                 SectionHeader("PLAYBACK")
             }
 
-            item {
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = NavySurface)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            "Default Speed: ${defaultSpeed}x",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        @Suppress("DEPRECATION")
-                        Slider(
-                            value = defaultSpeed,
-                            onValueChange = { defaultSpeed = it },
-                            valueRange = 0.5f..3.0f,
-                            steps = 9,
-                            colors = SliderDefaults.colors(
-                                thumbColor = Amber,
-                                activeTrackColor = Amber,
-                                inactiveTrackColor = NavyMuted
-                            )
-                        )
-                    }
-                }
-            }
+
 
             item {
                 Card(

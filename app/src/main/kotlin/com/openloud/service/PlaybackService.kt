@@ -324,8 +324,11 @@ class PlaybackService : MediaBrowserServiceCompat() {
     }
 
     fun loadChapter(chapter: ChapterEntity, startSentence: Int = 0) {
+        val wasPlaying = _playbackState.value == PlaybackState.PLAYING
+
         // Stop any ongoing TTS before switching chapters
         if (useEdgeTTS) edgeTTS?.stop() else systemTTS.stop()
+        _playbackState.value = PlaybackState.IDLE
 
         currentChapter = chapter
         sentences = contentCleaner.splitIntoSentences(chapter.textContent)
@@ -334,6 +337,11 @@ class PlaybackService : MediaBrowserServiceCompat() {
         updateMediaMetadata()
         updateMediaSessionState()
         updateNotification()
+
+        // If was playing, automatically resume with new content
+        if (wasPlaying) {
+            play()
+        }
     }
 
     fun play() {
@@ -522,17 +530,20 @@ class PlaybackService : MediaBrowserServiceCompat() {
             metadataBuilder.putLong(MediaMetadataCompat.METADATA_KEY_DURATION, estimatedDurationMs())
         }
 
-        // Content URI art — Android Auto requires content:// scheme
+        // Content URI art — Android Auto requires content:// scheme with permission grant
         currentCoverPath?.let { path ->
             try {
                 val file = java.io.File(path)
                 if (file.exists()) {
                     val contentUri = FileProvider.getUriForFile(
                         this@PlaybackService, "com.openloud.fileprovider", file
-                    ).toString()
-                    metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, contentUri)
-                    metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ART_URI, contentUri)
-                    metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, contentUri)
+                    )
+                    // Grant read permission to all packages (needed for Android Auto which runs in a separate process)
+                    grantUriPermission("com.google.android.projection.gearhead", contentUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    val uriStr = contentUri.toString()
+                    metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, uriStr)
+                    metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_ART_URI, uriStr)
+                    metadataBuilder.putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, uriStr)
                 }
             } catch (_: Exception) {
                 // Fall back to bitmap only (already set above)

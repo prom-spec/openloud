@@ -297,53 +297,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Volume Boost
-            item {
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = NavySurface)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            "Volume Boost: ${if (volumeBoost > 0) "+${volumeBoost}%" else "Off"}",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (volumeBoost > 0) Icons.Default.VolumeUp else Icons.Default.VolumeDown,
-                                contentDescription = "Volume",
-                                tint = if (volumeBoost > 0) Amber else TextMuted,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Slider(
-                                value = volumeBoost.toFloat(),
-                                onValueChange = { viewModel.setVolumeBoost(it.toInt()) },
-                                valueRange = 0f..100f,
-                                modifier = Modifier.weight(1f),
-                                colors = SliderDefaults.colors(
-                                    thumbColor = Amber,
-                                    activeTrackColor = Amber,
-                                    inactiveTrackColor = NavyMuted
-                                )
-                            )
-                        }
-                        Text(
-                            "Enhances audio loudness (0-100% = 0 to +15dB)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextMuted,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-            }
-
             // About section
             item {
                 Spacer(Modifier.height(8.dp))
@@ -381,7 +334,27 @@ fun SettingsScreen(
                             Icon(Icons.Default.OpenInNew, contentDescription = null, tint = TextMuted, modifier = Modifier.size(16.dp))
                         }
                         Divider(color = NavyMuted.copy(alpha = 0.3f))
-                        SettingsRow(icon = Icons.Default.Code, title = "Open Source", subtitle = "Apache License 2.0")
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val intent = Intent(
+                                        Intent.ACTION_VIEW,
+                                        Uri.parse("https://github.com/prom-spec/autobook")
+                                    )
+                                    context.startActivity(intent)
+                                }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(Icons.Default.Code, contentDescription = null, tint = TextMuted, modifier = Modifier.size(20.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Source Code", style = MaterialTheme.typography.bodyLarge, color = TextPrimary)
+                                Text("GitHub • Open Source", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                            }
+                            Icon(Icons.Default.OpenInNew, contentDescription = null, tint = TextMuted, modifier = Modifier.size(16.dp))
+                        }
                     }
                 }
             }

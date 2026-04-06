@@ -1,0 +1,30 @@
+Categories:
+  - Reading
+  - Multimedia
+License: GPL-3.0-only
+AuthorName: Prometheus
+AuthorEmail: prom@risingphoenix.ventures
+SourceCode: https://github.com/prom-spec/openloud
+IssueTracker: https://github.com/prom-spec/openloud/issues
+
+AutoName: OpenLoud
+
+RepoType: git
+Repo: https://github.com/prom-spec/openloud.git
+
+Builds:
+  - versionName: '1.0'
+    versionCode: 1
+    commit: main
+    subdir: app
+    gradle:
+      - yes
+
+AntiFeatures:
+  NonFreeNet:
+    en-US: Edge TTS uses Microsoft servers for AI neural voices. Device TTS works fully offline.
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: '1.0'
+CurrentVersionCode: 1

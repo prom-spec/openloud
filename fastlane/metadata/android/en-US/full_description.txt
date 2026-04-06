@@ -1,18 +1,12 @@
-OpenLoud turns your ebook library into audiobooks using text-to-speech.
-
-Import EPUB, PDF, or MOBI files and listen to them with high-quality voices. Perfect for commutes, workouts, or when your eyes need a break.
+OpenLoud turns any ebook into an audiobook using text-to-speech. Import your books, pick a voice, and listen.
 
 Features:
-• Import EPUB, PDF, and MOBI ebooks
-• Android system TTS or Microsoft Edge TTS voices
-• Background playback with media controls
-• Android Auto support for in-car listening
-• Adjustable playback speed
-• Chapter navigation
-• Sentence-level progress tracking
-• Clean, modern interface
-• 100% free and open source (GPL-3.0)
+• Import EPUB, PDF, TXT, DOCX, FB2, ODT, and MOBI files
+• Device TTS (offline) or Edge TTS AI neural voices
+• Volume boost for quiet audio
+• Android Auto support — browse and play from your car
+• Remembers your position in each book
+• Chapter navigation with skip forward/back
+• Dark theme
 
-Edge TTS provides natural-sounding voices but requires an internet connection. The built-in Android TTS works fully offline.
-
-OpenLoud is free, open source, and respects your privacy. No ads, no tracking, no accounts.
+OpenLoud is free and open source (GPL-3.0).

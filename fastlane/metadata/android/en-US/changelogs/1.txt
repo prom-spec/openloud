@@ -1,0 +1,8 @@
+Initial release:
+- Import EPUB, PDF, TXT, DOCX, FB2, ODT, and MOBI books
+- Text-to-speech with device TTS or Edge TTS (AI neural voices)
+- Volume boost with LoudnessEnhancer
+- Android Auto support with media browsing and playback controls
+- Per-book reading position saved automatically
+- Dark theme UI
+- Search and download books

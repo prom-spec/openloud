@@ -1,6 +1,7 @@
 package com.openloud.domain.tts
 
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.util.Log
 import kotlinx.coroutines.*
@@ -24,7 +25,7 @@ import java.util.concurrent.TimeUnit
  * Edge TTS engine — uses Microsoft Edge's free neural TTS via WebSocket.
  * Produces high-quality audio without any API key.
  */
-class EdgeTTSEngine(private val cacheDir: File) {
+class EdgeTTSEngine(private val cacheDir: File, private val audioSessionId: Int = 0) {
 
     companion object {
         private const val TAG = "EdgeTTSEngine"
@@ -312,6 +313,10 @@ class EdgeTTSEngine(private val cacheDir: File) {
             withContext(Dispatchers.Main) {
                 mediaPlayer?.release()
                 mediaPlayer = MediaPlayer().apply {
+                    // Use stable audio session ID so LoudnessEnhancer stays attached
+                    if (audioSessionId != 0) {
+                        setAudioSessionId(audioSessionId)
+                    }
                     setAudioAttributes(
                         AudioAttributes.Builder()
                             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)

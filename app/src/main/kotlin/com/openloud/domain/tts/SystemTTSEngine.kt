@@ -1,6 +1,7 @@
 package com.openloud.domain.tts
 
 import android.content.Context
+import android.media.AudioManager
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -18,8 +19,14 @@ class SystemTTSEngine(private val context: Context) {
 
     private var tts: TextToSpeech? = null
     private var isInitialized = false
+    private var audioSessionId: Int = 0
 
     suspend fun initialize(): Boolean = suspendCoroutine { continuation ->
+        // Generate a stable audio session ID for LoudnessEnhancer
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audioSessionId = audioManager.generateAudioSessionId()
+        Log.d(TAG, "Generated audio session ID: $audioSessionId")
+
         tts = TextToSpeech(context) { status ->
             isInitialized = status == TextToSpeech.SUCCESS
             if (isInitialized) {
@@ -91,13 +98,20 @@ class SystemTTSEngine(private val context: Context) {
     fun speakChunk(text: String, utteranceId: String) {
         if (!isInitialized || text.isBlank()) return
 
+        // Route audio through our stable session ID so LoudnessEnhancer works
+        val params = Bundle().apply {
+            if (audioSessionId != 0) {
+                putInt(TextToSpeech.Engine.KEY_PARAM_SESSION_ID, audioSessionId)
+            }
+        }
+
         // Try SSML for natural prosody (pauses at commas, emphasis)
         val ssml = buildSSML(text)
-        val result = tts?.speak(ssml, TextToSpeech.QUEUE_ADD, null, utteranceId)
+        val result = tts?.speak(ssml, TextToSpeech.QUEUE_ADD, params, utteranceId)
 
         // If SSML failed (some engines don't support it), fall back to plain text
         if (result != TextToSpeech.SUCCESS) {
-            tts?.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
+            tts?.speak(text, TextToSpeech.QUEUE_ADD, params, utteranceId)
         }
     }
 
@@ -168,14 +182,5 @@ class SystemTTSEngine(private val context: Context) {
      * Get the audio session ID for applying audio effects like LoudnessEnhancer.
      * Returns 0 if not available.
      */
-    fun getAudioSessionId(): Int {
-        return try {
-            // Try to get audio session ID via reflection (not directly exposed in TTS API)
-            val method = tts?.javaClass?.getMethod("getAudioSessionId")
-            method?.invoke(tts) as? Int ?: 0
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not get audio session ID: ${e.message}")
-            0
-        }
-    }
+    fun getAudioSessionId(): Int = audioSessionId
 }

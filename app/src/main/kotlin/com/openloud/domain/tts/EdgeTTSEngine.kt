@@ -3,6 +3,7 @@ package com.openloud.domain.tts
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.media.audiofx.LoudnessEnhancer
 import android.util.Log
 import kotlinx.coroutines.*
 import okhttp3.*
@@ -26,6 +27,35 @@ import java.util.concurrent.TimeUnit
  * Produces high-quality audio without any API key.
  */
 class EdgeTTSEngine(private val cacheDir: File, private val audioSessionId: Int = 0) {
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var currentVolumeBoostMb: Int = 0
+
+    init {
+        if (audioSessionId != 0) {
+            try {
+                loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
+                    setTargetGain(0)
+                    enabled = false
+                }
+                Log.d(TAG, "EdgeTTS LoudnessEnhancer created on session $audioSessionId")
+            } catch (e: Exception) {
+                Log.w(TAG, "EdgeTTS LoudnessEnhancer not supported: ${e.message}")
+            }
+        }
+    }
+
+    fun setVolumeBoost(gainMb: Int) {
+        currentVolumeBoostMb = gainMb.coerceIn(0, 1500)
+        loudnessEnhancer?.let {
+            try {
+                it.setTargetGain(currentVolumeBoostMb)
+                it.enabled = currentVolumeBoostMb > 0
+                Log.d(TAG, "Edge volume boost set to ${currentVolumeBoostMb}mB")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to set Edge volume boost: ${e.message}")
+            }
+        }
+    }
 
     companion object {
         private const val TAG = "EdgeTTSEngine"
@@ -343,18 +373,7 @@ class EdgeTTSEngine(private val cacheDir: File, private val audioSessionId: Int 
         }
     }
 
-    /**
-     * Get the audio session ID for applying audio effects like LoudnessEnhancer.
-     * Returns 0 if not available.
-     */
-    fun getAudioSessionId(): Int {
-        return try {
-            mediaPlayer?.audioSessionId ?: 0
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not get audio session ID: ${e.message}")
-            0
-        }
-    }
+    fun getAudioSessionId(): Int = audioSessionId
 
     // --- Protocol helpers ---
 

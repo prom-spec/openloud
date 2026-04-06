@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.media.audiofx.LoudnessEnhancer
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
@@ -16,7 +17,7 @@ import kotlin.coroutines.suspendCoroutine
 
 /**
  * System TTS engine that synthesizes to file and plays via MediaPlayer.
- * This guarantees a stable audio session ID for LoudnessEnhancer to attach to.
+ * Owns its own LoudnessEnhancer attached to MediaPlayer's audio session.
  */
 class SystemTTSEngine(private val context: Context) {
 
@@ -28,11 +29,12 @@ class SystemTTSEngine(private val context: Context) {
     private var isInitialized = false
     private var audioSessionId: Int = 0
     private var mediaPlayer: MediaPlayer? = null
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var currentVolumeBoostMb: Int = 0
     private var externalProgressListener: UtteranceProgressListener? = null
     private var currentSpeed: Float = 1.0f
 
     suspend fun initialize(): Boolean = suspendCoroutine { continuation ->
-        // Generate a stable audio session ID for LoudnessEnhancer
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         audioSessionId = audioManager.generateAudioSessionId()
         Log.d(TAG, "Generated audio session ID: $audioSessionId")
@@ -45,7 +47,6 @@ class SystemTTSEngine(private val context: Context) {
                 tts?.setPitch(0.95f)
                 tts?.setSpeechRate(0.92f)
 
-                // Internal listener for synthesize-to-file completion
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
                     override fun onDone(utteranceId: String?) {
@@ -60,6 +61,17 @@ class SystemTTSEngine(private val context: Context) {
                         onError(utteranceId)
                     }
                 })
+
+                // Create LoudnessEnhancer attached to our stable session
+                try {
+                    loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
+                        setTargetGain(currentVolumeBoostMb)
+                        enabled = currentVolumeBoostMb > 0
+                    }
+                    Log.d(TAG, "LoudnessEnhancer created on session $audioSessionId, gain=${currentVolumeBoostMb}mB")
+                } catch (e: Exception) {
+                    Log.w(TAG, "LoudnessEnhancer not supported: ${e.message}")
+                }
             }
             continuation.resume(isInitialized)
         }
@@ -80,6 +92,7 @@ class SystemTTSEngine(private val context: Context) {
         try {
             mediaPlayer?.release()
             mediaPlayer = MediaPlayer().apply {
+                // MUST set session ID before setDataSource for LoudnessEnhancer to work
                 setAudioSessionId(audioSessionId)
                 setAudioAttributes(
                     AudioAttributes.Builder()
@@ -90,7 +103,6 @@ class SystemTTSEngine(private val context: Context) {
                 setDataSource(file.absolutePath)
                 prepare()
 
-                // Apply speed via MediaPlayer playback params
                 if (currentSpeed != 1.0f) {
                     playbackParams = playbackParams.setSpeed(currentSpeed * 0.92f)
                 }
@@ -108,12 +120,33 @@ class SystemTTSEngine(private val context: Context) {
                 externalProgressListener?.onStart(utteranceId)
                 start()
             }
+
+            Log.d(TAG, "Playing via MediaPlayer session=$audioSessionId, enhancer=${loudnessEnhancer != null}, boost=${currentVolumeBoostMb}mB")
         } catch (e: Exception) {
             Log.e(TAG, "Error playing synthesized file: ${e.message}", e)
             file.delete()
             externalProgressListener?.onError(utteranceId)
         }
     }
+
+    /**
+     * Set volume boost in millibels (0 = off, 1500 = +15dB max).
+     * Can be called before or after initialization.
+     */
+    fun setVolumeBoost(gainMb: Int) {
+        currentVolumeBoostMb = gainMb.coerceIn(0, 1500)
+        loudnessEnhancer?.let {
+            try {
+                it.setTargetGain(currentVolumeBoostMb)
+                it.enabled = currentVolumeBoostMb > 0
+                Log.d(TAG, "Volume boost set to ${currentVolumeBoostMb}mB")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to set volume boost: ${e.message}")
+            }
+        }
+    }
+
+    fun getAudioSessionId(): Int = audioSessionId
 
     private fun selectBestVoice() {
         val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -146,12 +179,8 @@ class SystemTTSEngine(private val context: Context) {
 
         if (bestVoice != null) {
             tts?.voice = bestVoice
-            Log.d(TAG, "Auto-selected voice #${(englishVoices?.indexOf(bestVoice) ?: -1) + 1}: ${bestVoice.name} (quality=${bestVoice.quality}, locale=${bestVoice.locale}, network=${bestVoice.isNetworkConnectionRequired})")
-        } else {
-            Log.w(TAG, "No suitable voice found, using default")
+            Log.d(TAG, "Auto-selected voice #${(englishVoices?.indexOf(bestVoice) ?: -1) + 1}: ${bestVoice.name}")
         }
-
-        Log.d(TAG, "Available EN voices: ${englishVoices?.take(15)?.mapIndexed { i, v -> "#${i+1} ${v.name} (q=${v.quality}, net=${v.isNetworkConnectionRequired})" }}")
     }
 
     fun reloadVoice() {
@@ -163,17 +192,10 @@ class SystemTTSEngine(private val context: Context) {
         tts?.setSpeechRate(speed * 0.92f)
     }
 
-    /**
-     * Synthesize text to file, then play through MediaPlayer for volume boost support.
-     */
     fun speakChunk(text: String, utteranceId: String) {
         if (!isInitialized || text.isBlank()) return
-
         val outFile = getTempFile(utteranceId)
-
-        // Synthesize to file — onDone will trigger playback via MediaPlayer
         val result = tts?.synthesizeToFile(text, null, outFile, utteranceId)
-
         if (result != TextToSpeech.SUCCESS) {
             Log.e(TAG, "synthesizeToFile failed with result $result")
             externalProgressListener?.onError(utteranceId)
@@ -186,7 +208,6 @@ class SystemTTSEngine(private val context: Context) {
 
     fun speakWithPause(text: String, utteranceId: String, pauseMs: Int = 500) {
         if (!isInitialized) return
-        // For pause, still use direct TTS silent utterance, then synthesize-to-file for text
         tts?.playSilentUtterance(pauseMs.toLong(), TextToSpeech.QUEUE_ADD, "pause_$utteranceId")
         if (text.isNotBlank()) {
             speakChunk(text, utteranceId)
@@ -196,24 +217,21 @@ class SystemTTSEngine(private val context: Context) {
     fun stop() {
         tts?.stop()
         mediaPlayer?.let {
-            try {
-                if (it.isPlaying) it.stop()
-                it.reset()
-            } catch (_: Exception) {}
+            try { if (it.isPlaying) it.stop(); it.reset() } catch (_: Exception) {}
         }
     }
 
     fun pause() {
         tts?.stop()
         mediaPlayer?.let {
-            try {
-                if (it.isPlaying) it.pause()
-            } catch (_: Exception) {}
+            try { if (it.isPlaying) it.pause() } catch (_: Exception) {}
         }
     }
 
     fun shutdown() {
         stop()
+        loudnessEnhancer?.release()
+        loudnessEnhancer = null
         mediaPlayer?.release()
         mediaPlayer = null
         tts?.shutdown()
@@ -236,6 +254,4 @@ class SystemTTSEngine(private val context: Context) {
             it.quality
         }.thenBy { it.name }) ?: emptyList()
     }
-
-    fun getAudioSessionId(): Int = audioSessionId
 }

@@ -340,7 +340,7 @@ fun SettingsScreen(
                                 .clickable {
                                     val intent = Intent(
                                         Intent.ACTION_VIEW,
-                                        Uri.parse("https://github.com/prom-spec/autobook")
+                                        Uri.parse("https://github.com/prom-spec/openloud")
                                     )
                                     context.startActivity(intent)
                                 }

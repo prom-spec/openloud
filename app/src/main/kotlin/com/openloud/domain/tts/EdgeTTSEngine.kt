@@ -338,6 +338,19 @@ class EdgeTTSEngine(private val cacheDir: File) {
         }
     }
 
+    /**
+     * Get the audio session ID for applying audio effects like LoudnessEnhancer.
+     * Returns 0 if not available.
+     */
+    fun getAudioSessionId(): Int {
+        return try {
+            mediaPlayer?.audioSessionId ?: 0
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not get audio session ID: ${e.message}")
+            0
+        }
+    }
+
     // --- Protocol helpers ---
 
     private fun buildWsUrl(connectionId: String): String {

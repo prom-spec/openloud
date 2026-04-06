@@ -25,6 +25,9 @@ class SettingsViewModel(private val context: Context) : ViewModel() {
     private val _skipSeconds = MutableStateFlow(15)
     val skipSeconds: StateFlow<Int> = _skipSeconds
 
+    private val _volumeBoost = MutableStateFlow(0)
+    val volumeBoost: StateFlow<Int> = _volumeBoost
+
     // TTS engine selection
     private val _ttsEngine = MutableStateFlow("system")
     val ttsEngine: StateFlow<String> = _ttsEngine
@@ -49,6 +52,7 @@ class SettingsViewModel(private val context: Context) : ViewModel() {
     init {
         loadSelectedVoice()
         loadSkipSeconds()
+        loadVolumeBoost()
         loadTTSEngine()
         loadVoices()
     }
@@ -146,6 +150,16 @@ class SettingsViewModel(private val context: Context) : ViewModel() {
         prefs.edit().putInt(PREF_SKIP_SECONDS, seconds).apply()
     }
 
+    private fun loadVolumeBoost() {
+        _volumeBoost.value = prefs.getInt(PREF_VOLUME_BOOST, 0)
+    }
+
+    fun setVolumeBoost(boostPercent: Int) {
+        val clampedPercent = boostPercent.coerceIn(0, 100)
+        _volumeBoost.value = clampedPercent
+        prefs.edit().putInt(PREF_VOLUME_BOOST, clampedPercent).apply()
+    }
+
     fun testVoice(voiceName: String) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -176,6 +190,7 @@ class SettingsViewModel(private val context: Context) : ViewModel() {
     companion object {
         const val PREF_SELECTED_VOICE = "selected_voice"
         const val PREF_SKIP_SECONDS = "skip_seconds"
+        const val PREF_VOLUME_BOOST = "volume_boost"
         const val PREF_TTS_ENGINE = "tts_engine"
         const val PREF_EDGE_VOICE = "edge_voice"
     }

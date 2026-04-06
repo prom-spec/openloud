@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Binder
 import android.os.Build
@@ -20,6 +21,7 @@ import android.support.v4.media.MediaDescriptionCompat
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.media.MediaBrowserServiceCompat
 import com.openloud.MainActivity
@@ -51,11 +53,14 @@ class PlaybackService : MediaBrowserServiceCompat() {
     private lateinit var mediaSession: MediaSessionCompat
     private lateinit var notificationManager: NotificationManager
     private lateinit var prefs: SharedPreferences
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var currentVolumeBoostMb: Int = 0
     private val voiceChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
             "selected_voice" -> if (!useEdgeTTS) setVoice()
             "tts_engine" -> switchEngine()
             "edge_voice" -> updateEdgeVoice()
+            "volume_boost" -> updateVolumeBoost()
         }
     }
 
@@ -105,6 +110,7 @@ class PlaybackService : MediaBrowserServiceCompat() {
                 _ttsReady.value = initialized
                 if (initialized) {
                     setupSystemTTSListener()
+                    initializeLoudnessEnhancer()
                     if (pendingPlay) {
                         pendingPlay = false
                         play()
@@ -198,11 +204,13 @@ class PlaybackService : MediaBrowserServiceCompat() {
         useEdgeTTS = prefs.getString("tts_engine", "system") == "edge"
         if (useEdgeTTS) {
             initEdgeTTS()
+            // LoudnessEnhancer will be reinitialized when Edge TTS plays first sentence
         } else {
             edgeTTS?.shutdown()
             edgeTTS = null
             _ttsReady.value = true
             setupSystemTTSListener()
+            initializeLoudnessEnhancer()
         }
         if (wasPlaying) play()
     }
@@ -249,6 +257,14 @@ class PlaybackService : MediaBrowserServiceCompat() {
 
             if (useEdgeTTS) {
                 edgeTTS?.speakSentence(sentence, "sentence_$currentSentenceIndex")
+                // Reinitialize LoudnessEnhancer for Edge TTS on first play
+                if (currentSentenceIndex == 1 && loudnessEnhancer == null) {
+                    // Wait a bit for MediaPlayer to be created, then attach
+                    serviceScope.launch {
+                        kotlinx.coroutines.delay(200)
+                        reinitializeLoudnessEnhancerForEdge()
+                    }
+                }
                 // Prefetch next non-break sentence for faster playback
                 prefetchNextEdgeSentence()
             } else {
@@ -366,6 +382,70 @@ class PlaybackService : MediaBrowserServiceCompat() {
             if (useEdgeTTS) edgeTTS?.stop() else systemTTS.stop()
             if (currentSentenceIndex > 0) currentSentenceIndex--
             playNextSentence()
+        }
+    }
+
+    /**
+     * Set volume boost in millibels (0-1500 range, where 0=off, 1500=+15dB max)
+     */
+    fun setVolumeBoost(gainMb: Int) {
+        currentVolumeBoostMb = gainMb.coerceIn(0, 1500)
+        loudnessEnhancer?.let {
+            try {
+                it.setTargetGain(currentVolumeBoostMb)
+            } catch (e: Exception) {
+                Log.w("PlaybackService", "Failed to set volume boost: ${e.message}")
+            }
+        }
+    }
+
+    private fun updateVolumeBoost() {
+        val boostPercent = prefs.getInt("volume_boost", 0)
+        val gainMb = (boostPercent * 15).coerceIn(0, 1500) // 0-100% -> 0-1500mB
+        setVolumeBoost(gainMb)
+    }
+
+    private fun initializeLoudnessEnhancer() {
+        try {
+            // Get audio session ID from System TTS
+            val audioSessionId = systemTTS.getAudioSessionId()
+
+            if (audioSessionId != 0) {
+                loudnessEnhancer?.release()
+                loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
+                    enabled = true
+                }
+
+                // Apply saved volume boost
+                updateVolumeBoost()
+
+                Log.d("PlaybackService", "LoudnessEnhancer initialized with session $audioSessionId")
+            }
+        } catch (e: Exception) {
+            Log.w("PlaybackService", "LoudnessEnhancer not supported on this device: ${e.message}")
+            loudnessEnhancer = null
+        }
+    }
+
+    private fun reinitializeLoudnessEnhancerForEdge() {
+        try {
+            // For Edge TTS, get audio session from MediaPlayer
+            val audioSessionId = edgeTTS?.getAudioSessionId() ?: 0
+
+            if (audioSessionId != 0) {
+                loudnessEnhancer?.release()
+                loudnessEnhancer = LoudnessEnhancer(audioSessionId).apply {
+                    enabled = true
+                }
+
+                // Apply saved volume boost
+                updateVolumeBoost()
+
+                Log.d("PlaybackService", "LoudnessEnhancer reinitialized for Edge TTS with session $audioSessionId")
+            }
+        } catch (e: Exception) {
+            Log.w("PlaybackService", "LoudnessEnhancer not supported for Edge TTS: ${e.message}")
+            loudnessEnhancer = null
         }
     }
 
@@ -531,6 +611,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
         prefs.unregisterOnSharedPreferenceChangeListener(voiceChangeListener)
         systemTTS.shutdown()
         edgeTTS?.shutdown()
+        loudnessEnhancer?.release()
+        loudnessEnhancer = null
         mediaSession.release()
         serviceScope.cancel()
     }

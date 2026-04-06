@@ -163,4 +163,19 @@ class SystemTTSEngine(private val context: Context) {
             it.quality
         }.thenBy { it.name }) ?: emptyList()
     }
+
+    /**
+     * Get the audio session ID for applying audio effects like LoudnessEnhancer.
+     * Returns 0 if not available.
+     */
+    fun getAudioSessionId(): Int {
+        return try {
+            // Try to get audio session ID via reflection (not directly exposed in TTS API)
+            val method = tts?.javaClass?.getMethod("getAudioSessionId")
+            method?.invoke(tts) as? Int ?: 0
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not get audio session ID: ${e.message}")
+            0
+        }
+    }
 }

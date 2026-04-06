@@ -26,6 +26,7 @@ class PlayerViewModel(
     companion object {
         private const val TAG = "PlayerViewModel"
         private const val PREF_SPEED = "playback_speed"
+        private const val PREF_VOLUME_BOOST = "volume_boost"
     }
 
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -64,6 +65,9 @@ class PlayerViewModel(
     private val _skipSeconds = MutableStateFlow(prefs.getInt("skip_seconds", 15))
     val skipSeconds: StateFlow<Int> = _skipSeconds
 
+    private val _volumeBoost = MutableStateFlow(prefs.getInt(PREF_VOLUME_BOOST, 0))
+    val volumeBoost: StateFlow<Int> = _volumeBoost
+
     private val _ttsReady = MutableStateFlow(false)
     val ttsReady: StateFlow<Boolean> = _ttsReady
 
@@ -80,6 +84,13 @@ class PlayerViewModel(
             val savedSpeed = _playbackSpeed.value
             if (savedSpeed != 1.0f) {
                 playbackService?.setSpeed(savedSpeed)
+            }
+
+            // Apply saved volume boost
+            val savedVolumeBoost = _volumeBoost.value
+            if (savedVolumeBoost > 0) {
+                val gainMb = (savedVolumeBoost * 15).coerceIn(0, 1500)
+                playbackService?.setVolumeBoost(gainMb)
             }
 
             // Execute pending load if any
@@ -314,7 +325,18 @@ class PlayerViewModel(
         prefs.edit().putFloat(PREF_SPEED, speed).apply()
     }
 
-        private fun startAutoSave() {
+    /**
+     * Set volume boost as percentage (0-100, where 0=off, 100=max +15dB)
+     */
+    fun setVolumeBoost(boostPercent: Int) {
+        val clampedPercent = boostPercent.coerceIn(0, 100)
+        _volumeBoost.value = clampedPercent
+        val gainMb = (clampedPercent * 15).coerceIn(0, 1500) // Convert to millibels
+        playbackService?.setVolumeBoost(gainMb)
+        prefs.edit().putInt(PREF_VOLUME_BOOST, clampedPercent).apply()
+    }
+
+    private fun startAutoSave() {
         autoSaveJob?.cancel()
         autoSaveJob = viewModelScope.launch {
             while (true) {

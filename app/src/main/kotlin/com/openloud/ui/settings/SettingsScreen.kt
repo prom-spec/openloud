@@ -36,6 +36,7 @@ fun SettingsScreen(
     val ttsEngine by viewModel.ttsEngine.collectAsState()
     val edgeVoices by viewModel.edgeVoices.collectAsState()
     val selectedEdgeVoice by viewModel.selectedEdgeVoice.collectAsState()
+    val volumeBoost by viewModel.volumeBoost.collectAsState()
 
     Scaffold(
         containerColor = Navy,
@@ -292,6 +293,53 @@ fun SettingsScreen(
                                 )
                             }
                         }
+                    }
+                }
+            }
+
+            // Volume Boost
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = NavySurface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            "Volume Boost: ${if (volumeBoost > 0) "+${volumeBoost}%" else "Off"}",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (volumeBoost > 0) Icons.Default.VolumeUp else Icons.Default.VolumeDown,
+                                contentDescription = "Volume",
+                                tint = if (volumeBoost > 0) Amber else TextMuted,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Slider(
+                                value = volumeBoost.toFloat(),
+                                onValueChange = { viewModel.setVolumeBoost(it.toInt()) },
+                                valueRange = 0f..100f,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Amber,
+                                    activeTrackColor = Amber,
+                                    inactiveTrackColor = NavyMuted
+                                )
+                            )
+                        }
+                        Text(
+                            "Enhances audio loudness (0-100% = 0 to +15dB)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextMuted,
+                            fontSize = 11.sp
+                        )
                     }
                 }
             }

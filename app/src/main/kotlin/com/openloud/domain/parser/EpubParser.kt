@@ -27,7 +27,8 @@ class EpubParser {
                 val entry = zip.getEntry(itemPath) ?: return@forEachIndexed
                 val html = zip.getInputStream(entry).bufferedReader().readText()
                 val doc = Jsoup.parse(html)
-                val text = doc.body()?.text() ?: ""
+                val body = doc.body() ?: return@forEachIndexed
+                val text = extractStructuredText(body)
                 if (text.isNotBlank()) {
                     sb.appendLine(text)
                     sb.appendLine()
@@ -40,6 +41,48 @@ class EpubParser {
 
         zip.close()
         return sb.toString()
+    }
+
+    /**
+     * Walk the DOM preserving paragraph boundaries.
+     * Block-level elements (p, div, h1-h6, blockquote, li) produce \n\n.
+     * Multiple consecutive breaks collapse to a single paragraph break.
+     */
+    private fun extractStructuredText(element: org.jsoup.nodes.Element): String {
+        val blockTags = setOf("p", "div", "h1", "h2", "h3", "h4", "h5", "h6",
+            "blockquote", "li", "tr", "section", "article", "header", "footer")
+        val sb = StringBuilder()
+        for (node in element.childNodes()) {
+            when (node) {
+                is org.jsoup.nodes.TextNode -> {
+                    val text = node.text().trim()
+                    if (text.isNotEmpty()) {
+                        if (sb.isNotEmpty() && !sb.endsWith(" ") && !sb.endsWith("\n")) sb.append(" ")
+                        sb.append(text)
+                    }
+                }
+                is org.jsoup.nodes.Element -> {
+                    val tag = node.tagName().lowercase()
+                    if (tag == "br") {
+                        sb.append("\n")
+                    } else if (tag in blockTags) {
+                        // Single paragraph break before block element
+                        if (sb.isNotEmpty() && !sb.endsWith("\n\n")) {
+                            if (sb.endsWith("\n")) sb.append("\n") else sb.append("\n\n")
+                        }
+                        sb.append(extractStructuredText(node))
+                        // Single paragraph break after block element
+                        if (sb.isNotEmpty() && !sb.endsWith("\n\n")) {
+                            if (sb.endsWith("\n")) sb.append("\n") else sb.append("\n\n")
+                        }
+                    } else {
+                        sb.append(extractStructuredText(node))
+                    }
+                }
+            }
+        }
+        // Collapse 3+ newlines to exactly 2 (single paragraph break)
+        return sb.toString().replace(Regex("\n{3,}"), "\n\n")
     }
 
     /**

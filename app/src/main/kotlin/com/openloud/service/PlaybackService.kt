@@ -313,18 +313,13 @@ class PlaybackService : MediaBrowserServiceCompat() {
             currentSentenceIndex++
 
             if (sentence == ContentCleaner.PARAGRAPH_BREAK) {
-                // Skip any consecutive paragraph breaks (already-imported books may have many)
+                // Skip all paragraph breaks — no audible pause, just continue to next sentence
                 while (currentSentenceIndex < sentences.size &&
                        sentences[currentSentenceIndex] == ContentCleaner.PARAGRAPH_BREAK) {
                     currentSentenceIndex++
                 }
                 _currentPosition.value = currentSentenceIndex
-                // Single short pause for the paragraph gap
-                if (useEdgeTTS) {
-                    edgeTTS?.speakWithPause("", "para_$currentSentenceIndex", 150)
-                } else {
-                    systemTTS.speakWithPause("", "para_$currentSentenceIndex", 150)
-                }
+                playNextSentence()
                 return
             }
 

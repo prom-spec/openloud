@@ -102,7 +102,7 @@ class EdgeTTSEngine(private val cacheDir: File, private val audioSessionId: Int 
     private var prefetchedAudio: Pair<String, ByteArray>? = null  // text -> audio
     private val prefetchCache = LinkedHashMap<String, ByteArray>()  // multi-sentence cache
     private var prefetchBatchJob: Job? = null
-    private val maxPrefetch = 3
+    private val maxPrefetch = 5
     private var isReady = true
     private var clockSkewSeconds: Double = 0.0
     private var retryCount = 0

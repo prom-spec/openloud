@@ -327,8 +327,8 @@ class PlaybackService : MediaBrowserServiceCompat() {
 
             if (useEdgeTTS) {
                 edgeTTS?.speakSentence(sentence, "sentence_$currentSentenceIndex")
-                // Prefetch next 3 non-break sentences for gapless playback
-                prefetchNextEdgeSentences(3)
+                // Prefetch next 5 non-break sentences for gapless playback
+                prefetchNextEdgeSentences(5)
             } else {
                 systemTTS.speakSentence(sentence, "sentence_$currentSentenceIndex")
             }
